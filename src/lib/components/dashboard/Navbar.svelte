@@ -8,7 +8,7 @@
 <nav class="bg-[var(--theme-bg)] shadow-sm border-b border-gray-200 dark:border-white/10 px-6 py-4 flex justify-between items-center sticky top-0 z-10 transition-colors duration-200">
     <h1 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
         <Icon icon="mdi:script-text" class="text-blue-600 dark:text-blue-400 text-3xl" />
-        TypstDrive
+        Trykst
     </h1>
     <div class="flex items-center gap-6">
         <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-medium">

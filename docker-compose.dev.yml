@@ -2,26 +2,26 @@
 #
 #   docker compose -f docker-compose.dev.yml up -d
 #
-# Realm "typstdrive" is imported on first start (dev/keycloak/typstdrive-realm.json):
-#   alice / alice   typstdrive-user + typstdrive-admin
-#   bob   / bob     typstdrive-user
-#   carol / carol   no TypstDrive role (rejected when OIDC_REQUIRED_ROLE is set)
+# Realm "trykst" is imported on first start (dev/keycloak/trykst-realm.json):
+#   alice / alice   trykst-user + trykst-admin
+#   bob   / bob     trykst-user
+#   carol / carol   no Trykst role (rejected when OIDC_REQUIRED_ROLE is set)
 #   vanessa, albrecht, mike, david, thomas, dana (password = username):
 #                   colleagues who never signed in, for testing invitations
-#   erik  / erik    external guest: member of "Partner AG" only (no TypstDrive role needed)
+#   erik  / erik    external guest: member of "Partner AG" only (no Trykst role needed)
 # Organizations: "Example IT Solutions GmbH" (everyone above except carol and erik)
 #   and "Partner AG" (erik, vanessa)
 # Keycloak admin console: http://localhost:8080  (admin / admin)
 #
 # Then run the server on the host with:
-#   OIDC_ISSUER=http://localhost:8080/realms/typstdrive
-#   OIDC_CLIENT_ID=typstdrive
-#   OIDC_CLIENT_SECRET=typstdrive-dev-secret
+#   OIDC_ISSUER=http://localhost:8080/realms/trykst
+#   OIDC_CLIENT_ID=trykst
+#   OIDC_CLIENT_SECRET=trykst-dev-secret
 #   PUBLIC_URL=http://localhost:3000
 #   OIDC_ROLES_CLAIM=realm_access.roles
-#   OIDC_ADMIN_ROLE=typstdrive-admin
-#   OIDC_REQUIRED_ROLE=typstdrive-user
-#   OIDC_GUEST_ROLE=typstdrive-external
+#   OIDC_ADMIN_ROLE=trykst-admin
+#   OIDC_REQUIRED_ROLE=trykst-user
+#   OIDC_GUEST_ROLE=trykst-external
 #   OIDC_SCOPES=openid profile email organization:*
 #   OIDC_HOME_ORGANIZATIONS=example
 #   OIDC_DIRECTORY=keycloak

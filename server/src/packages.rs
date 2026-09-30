@@ -95,7 +95,7 @@ pub async fn publish_package(
     }
 
     let existing = sqlx::query_as::<_, Package>(
-        "SELECT id, owner_id, namespace, name, description, created_at FROM packages WHERE namespace = 'typstdrive' AND name = ?"
+        "SELECT id, owner_id, namespace, name, description, created_at FROM packages WHERE namespace = 'trykst' AND name = ?"
     )
     .bind(&name)
     .fetch_optional(&state.db)
@@ -112,7 +112,7 @@ pub async fn publish_package(
         None => {
             let package_id = Uuid::new_v4().to_string();
             sqlx::query_as::<_, Package>(
-                "INSERT INTO packages (id, owner_id, namespace, name, description) VALUES (?, ?, 'typstdrive', ?, ?) RETURNING id, owner_id, namespace, name, description, created_at"
+                "INSERT INTO packages (id, owner_id, namespace, name, description) VALUES (?, ?, 'trykst', ?, ?) RETURNING id, owner_id, namespace, name, description, created_at"
             )
             .bind(&package_id)
             .bind(&user_id)
@@ -197,7 +197,7 @@ pub async fn list_versions(
     let versions = sqlx::query_as::<_, PackageVersion>(
         "SELECT v.id, v.package_id, v.version, v.entrypoint, v.created_at \
          FROM package_versions v JOIN packages p ON p.id = v.package_id \
-         WHERE p.namespace = 'typstdrive' AND p.name = ? ORDER BY v.created_at DESC"
+         WHERE p.namespace = 'trykst' AND p.name = ? ORDER BY v.created_at DESC"
     )
     .bind(&name)
     .fetch_all(&state.db)
@@ -224,12 +224,12 @@ pub async fn delete_package(
         .unwrap_or(false);
 
     let result = if is_admin {
-        sqlx::query("DELETE FROM packages WHERE namespace = 'typstdrive' AND name = ?")
+        sqlx::query("DELETE FROM packages WHERE namespace = 'trykst' AND name = ?")
             .bind(&name)
             .execute(&state.db)
             .await
     } else {
-        sqlx::query("DELETE FROM packages WHERE namespace = 'typstdrive' AND name = ? AND owner_id = ?")
+        sqlx::query("DELETE FROM packages WHERE namespace = 'trykst' AND name = ? AND owner_id = ?")
             .bind(&name)
             .bind(&user_id)
             .execute(&state.db)

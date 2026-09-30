@@ -28,7 +28,7 @@
 				error = await res.text();
 			} else {
 				const pkg = await res.json();
-				success = `Published @typstdrive/${pkg.name}`;
+				success = `Published @trykst/${pkg.name}`;
 			}
 		} catch (e) {
 			error = 'Network error while publishing.';
@@ -46,7 +46,7 @@
 
 		<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 			Snapshots this space's files into an immutable package version, importable instance-wide as
-			<code class="font-mono text-xs bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">@typstdrive/&lt;name&gt;:&lt;version&gt;</code>.
+			<code class="font-mono text-xs bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">@trykst/&lt;name&gt;:&lt;version&gt;</code>.
 			The name, version and entrypoint come from your <code class="font-mono text-xs bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">typst.toml</code>.
 		</p>
 

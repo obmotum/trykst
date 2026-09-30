@@ -1,7 +1,7 @@
 //! User directory lookup for invitations.
 //!
 //! With OIDC there is no local user list, so a colleague who never signed in is
-//! unknown to TypstDrive. A directory lets us find such people at the identity
+//! unknown to Trykst. A directory lets us find such people at the identity
 //! provider and create a placeholder account keyed by their subject, which is
 //! linked automatically on their first login.
 //!
@@ -368,7 +368,7 @@ pub struct SearchQuery {
 pub struct SearchResult {
     /// Set for people found at the IdP; pass it back as `subject` when inviting.
     subject: Option<String>,
-    /// Set for people who already have a TypstDrive account.
+    /// Set for people who already have a Trykst account.
     user_id: Option<String>,
     username: String,
     email: Option<String>,

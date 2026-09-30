@@ -418,7 +418,7 @@
 </script>
 
 <svelte:head>
-	<title>Dashboard - TypstDrive</title>
+	<title>Dashboard - Trykst</title>
 	<meta name="description" content="Manage your Typst documents and folders." />
 </svelte:head>
 

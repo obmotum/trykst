@@ -13,7 +13,7 @@
 </script>
 
 <svelte:head>
-	<title>TypstDrive</title>
+	<title>Trykst</title>
 	<meta name="description" content="Collaborative Typst Editor." />
 </svelte:head>
 

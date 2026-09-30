@@ -194,7 +194,7 @@
 </script>
 
 <svelte:head>
-	<title>{spaceName} - TypstDrive</title>
+	<title>{spaceName} - Trykst</title>
 </svelte:head>
 
 <svelte:window onclick={closeContextMenu} />

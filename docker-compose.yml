@@ -6,10 +6,10 @@ services:
     environment:
       # --- Required ---
       # SQLite (default, single-volume, no extra container):
-      - DATABASE_URL=sqlite:///data/typstdrive.db?mode=rwc
+      - DATABASE_URL=sqlite:///data/trykst.db?mode=rwc
       - DB_TYPE=sqlite
       # PostgreSQL alternative (uncomment and set DB_TYPE=postgres):
-      # - DATABASE_URL=postgres://postgres:password@db:5432/typstdrive
+      # - DATABASE_URL=postgres://postgres:password@db:5432/trykst
       # - DB_TYPE=postgres
 
       # --- Optional ---
@@ -23,9 +23,9 @@ services:
       # - COOKIE_SECRET=your-64-plus-byte-secret-here
 
       # --- Sign-in (OIDC, required) ---
-      # TypstDrive has no local accounts; users sign in via your identity provider.
+      # Trykst has no local accounts; users sign in via your identity provider.
       - OIDC_ISSUER=https://sso.example.com/realms/example
-      - OIDC_CLIENT_ID=typstdrive
+      - OIDC_CLIENT_ID=trykst
       - OIDC_CLIENT_SECRET=change-me
       # Externally reachable URL of this instance. Redirect URI to register at the IdP:
       #   <PUBLIC_URL>/api/auth/oidc/callback
@@ -34,12 +34,12 @@ services:
       # Dot path to the roles/groups claim (Keycloak: enable "Add to ID token" on the roles mapper)
       # - OIDC_ROLES_CLAIM=realm_access.roles
       # Members of this role are admins (otherwise the first user becomes admin)
-      # - OIDC_ADMIN_ROLE=typstdrive-admin
+      # - OIDC_ADMIN_ROLE=trykst-admin
       # Only members of this role may sign in
-      # - OIDC_REQUIRED_ROLE=typstdrive-user
+      # - OIDC_REQUIRED_ROLE=trykst-user
       # Members of this role are guests (external users): they only see what is shared
       # with them and cannot create documents, spaces, packages or API keys
-      # - OIDC_GUEST_ROLE=typstdrive-external
+      # - OIDC_GUEST_ROLE=trykst-external
       # Guests by organization (Keycloak 26 Organizations): members of these organizations
       # (aliases) are regular users, members of only other organizations are guests.
       # Needs the organizations in the token: add organization:* to OIDC_SCOPES.
@@ -73,7 +73,7 @@ services:
   #   environment:
   #     POSTGRES_USER: postgres
   #     POSTGRES_PASSWORD: password
-  #     POSTGRES_DB: typstdrive
+  #     POSTGRES_DB: trykst
   #   ports:
   #     - "5433:5432"
   #   volumes:

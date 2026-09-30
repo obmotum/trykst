@@ -24,7 +24,7 @@
 	}
 
 	function importSnippet(pkg: Package): string {
-		return `#import "@typstdrive/${pkg.name}:${pkg.latest_version ?? '0.1.0'}": *`;
+		return `#import "@trykst/${pkg.name}:${pkg.latest_version ?? '0.1.0'}": *`;
 	}
 
 	async function copy(pkg: Package) {
@@ -43,7 +43,7 @@
 </script>
 
 <svelte:head>
-	<title>Packages - TypstDrive</title>
+	<title>Packages - Trykst</title>
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50 dark:bg-[var(--theme-bg)]">
@@ -61,7 +61,7 @@
 			</h2>
 			<p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
 				Instance-local Typst packages, published from Spaces and importable as
-				<code class="font-mono text-xs bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">@typstdrive/&lt;name&gt;:&lt;version&gt;</code>.
+				<code class="font-mono text-xs bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">@trykst/&lt;name&gt;:&lt;version&gt;</code>.
 			</p>
 		</div>
 
@@ -78,7 +78,7 @@
 					<div class="bg-white dark:bg-black/20 rounded-xl border border-gray-200 dark:border-white/10 p-4 flex items-start justify-between gap-4">
 						<div class="min-w-0">
 							<div class="flex items-center gap-2">
-								<p class="font-semibold text-gray-900 dark:text-white truncate">@typstdrive/{pkg.name}</p>
+								<p class="font-semibold text-gray-900 dark:text-white truncate">@trykst/{pkg.name}</p>
 								{#if pkg.latest_version}
 									<span class="text-xs font-mono bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded">v{pkg.latest_version}</span>
 								{/if}

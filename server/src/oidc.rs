@@ -1,6 +1,6 @@
 //! OpenID Connect authentication.
 //!
-//! TypstDrive has no local accounts: every user signs in through the configured
+//! Trykst has no local accounts: every user signs in through the configured
 //! OpenID Provider (Keycloak, Authentik, Entra ID, ...). Users are provisioned
 //! just-in-time on their first login and keyed by `(issuer, subject)`.
 //!
@@ -64,7 +64,7 @@ pub struct OidcConfig {
     pub issuer: String,
     pub client_id: String,
     pub client_secret: Option<String>,
-    /// Externally reachable base URL of TypstDrive, e.g. `https://typst.example.com`.
+    /// Externally reachable base URL of Trykst, e.g. `https://typst.example.com`.
     pub public_url: String,
     pub scopes: Vec<String>,
     /// Claim holding the stable user identifier. `sub` for Keycloak/Authentik, `oid` for Entra ID.
@@ -72,7 +72,7 @@ pub struct OidcConfig {
     pub username_claim: String,
     /// Dot-separated path to the roles/groups array, e.g. `realm_access.roles` or `groups`.
     pub roles_claim: Option<String>,
-    /// Members of this role are admins. When unset, admins are managed inside TypstDrive.
+    /// Members of this role are admins. When unset, admins are managed inside Trykst.
     pub admin_role: Option<String>,
     /// When set, only members of this role (or of `guest_role`) may sign in.
     pub required_role: Option<String>,
@@ -94,7 +94,7 @@ impl OidcConfig {
             std::env::var(name)
                 .ok()
                 .filter(|v| !v.trim().is_empty())
-                .unwrap_or_else(|| panic!("{name} must be set (TypstDrive signs in exclusively via OIDC)"))
+                .unwrap_or_else(|| panic!("{name} must be set (Trykst signs in exclusively via OIDC)"))
         }
         fn optional(name: &str) -> Option<String> {
             std::env::var(name).ok().filter(|v| !v.trim().is_empty())
@@ -136,7 +136,7 @@ impl OidcConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Provider (discovered lazily, so TypstDrive can start before the IdP is up)
+// Provider (discovered lazily, so Trykst can start before the IdP is up)
 // ---------------------------------------------------------------------------
 
 struct Provider {
@@ -499,7 +499,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
         && (only_external_organizations || (has_role(&config.guest_role) && !is_member_by_role));
 
     if config.required_role.is_some() && !is_member_by_role && !is_admin_by_role && !in_home_organization && !is_guest {
-        return Err((StatusCode::FORBIDDEN, "You are not permitted to use TypstDrive".to_string()));
+        return Err((StatusCode::FORBIDDEN, "You are not permitted to use Trykst".to_string()));
     }
     let admin_from_idp = config.admin_role.is_some().then_some(is_admin_by_role);
 

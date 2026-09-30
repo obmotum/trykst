@@ -141,7 +141,7 @@ pub async fn init_schema(pool: &AnyPool) {
         "CREATE TABLE IF NOT EXISTS packages (
             id TEXT PRIMARY KEY,
             owner_id TEXT NOT NULL REFERENCES users(id),
-            namespace TEXT NOT NULL DEFAULT 'typstdrive',
+            namespace TEXT NOT NULL DEFAULT 'trykst',
             name TEXT NOT NULL,
             description TEXT,
             created_at TEXT DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
@@ -182,6 +182,7 @@ pub async fn init_schema(pool: &AnyPool) {
 
     // Idempotent migrations for existing databases
     let migrations = [
+        "UPDATE packages SET namespace = 'trykst' WHERE namespace = 'typstdrive'",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_guest BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_issuer TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_subject TEXT",

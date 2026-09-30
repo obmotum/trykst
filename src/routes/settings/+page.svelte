@@ -312,8 +312,8 @@
 </script>
 
 <svelte:head>
-    <title>Settings - TypstDrive</title>
-    <meta name="description" content="Manage your TypstDrive settings." />
+    <title>Settings - Trykst</title>
+    <meta name="description" content="Manage your Trykst settings." />
 </svelte:head>
 
 <div class="min-h-screen flex flex-col">

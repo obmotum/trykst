@@ -88,7 +88,7 @@
 </script>
 
 <svelte:head>
-	<title>Spaces - TypstDrive</title>
+	<title>Spaces - Trykst</title>
 </svelte:head>
 
 <svelte:window onclick={handleWindowClick} />

@@ -33,7 +33,7 @@ export function redirectToLogin(returnTo: string = window.location.pathname + wi
     window.location.href = `/api/auth/oidc/login?return_to=${encodeURIComponent(returnTo)}`;
 }
 
-/** Ends the TypstDrive session, then the IdP session. */
+/** Ends the Trykst session, then the IdP session. */
 export async function logout() {
     let logoutUrl: string | null = null;
     try {

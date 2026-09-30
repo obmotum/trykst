@@ -121,9 +121,9 @@
 </script>
 
 <svelte:head>
-	<title>{documentTitle} - TypstDrive</title>
-	<meta name="description" content={`Editing ${documentTitle} in TypstDrive.`} />
-	<meta property="og:title" content={`${documentTitle} - TypstDrive`} />
+	<title>{documentTitle} - Trykst</title>
+	<meta name="description" content={`Editing ${documentTitle} in Trykst.`} />
+	<meta property="og:title" content={`${documentTitle} - Trykst`} />
 </svelte:head>
 
 <svelte:window onclick={closeContextMenu} />

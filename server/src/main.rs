@@ -62,7 +62,7 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("Starting TypstDrive Server");
+    tracing::info!("Starting Trykst Server");
 
     let db = db::init_db().await;
 

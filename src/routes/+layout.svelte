@@ -29,10 +29,10 @@
 </script>
 
 <svelte:head>
-	<title>TypstDrive</title>
-	<meta name="description" content="TypstDrive - A collaborative Typst editor and document manager." />
+	<title>Trykst</title>
+	<meta name="description" content="Trykst - A collaborative Typst editor and document manager." />
 	<meta name="theme-color" content={currentColors.background} />
-	<meta property="og:title" content="TypstDrive" />
+	<meta property="og:title" content="Trykst" />
 	<meta property="og:description" content="A collaborative Typst editor and document manager." />
 	<meta property="og:type" content="website" />
 </svelte:head>
@@ -53,6 +53,6 @@
 	</div>
 {:else}
 	<div class="min-h-screen w-full flex items-center justify-center bg-gray-50 dark:bg-zinc-950">
-		<div class="text-gray-500 dark:text-gray-400 font-medium animate-pulse">Loading TypstDrive...</div>
+		<div class="text-gray-500 dark:text-gray-400 font-medium animate-pulse">Loading Trykst...</div>
 	</div>
 {/if}

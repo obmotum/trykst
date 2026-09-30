@@ -142,8 +142,8 @@ with open("output.png", "wb") as f:
 </script>
 
 <svelte:head>
-    <title>API Docs - TypstDrive</title>
-    <meta name="description" content="TypstDrive Render API documentation." />
+    <title>API Docs - Trykst</title>
+    <meta name="description" content="Trykst Render API documentation." />
 </svelte:head>
 
 <style>
@@ -224,7 +224,7 @@ with open("output.png", "wb") as f:
                         Overview
                     </h2>
                     <p class="text-gray-600 dark:text-gray-300 mb-6">
-                        The TypstDrive Render API lets you compile Typst markup into PNG images or PDF documents programmatically.
+                        The Trykst Render API lets you compile Typst markup into PNG images or PDF documents programmatically.
                         Authenticate with an API key and POST Typst code — get back binary output.
                     </p>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
@@ -352,7 +352,7 @@ with open("output.png", "wb") as f:
 
                     <div class="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/30 text-sm text-blue-800 dark:text-blue-300">
                         <p class="font-semibold mb-1 flex items-center gap-2"><Icon icon="mdi:folder-account-outline" class="text-base" /> Account files available automatically</p>
-                        <p>Files uploaded to your TypstDrive account are available by filename inside your Typst code. Pass additional files inline via the <code class="font-mono text-xs bg-blue-100 dark:bg-blue-800/40 px-1 rounded">files</code> array to supplement or override them.</p>
+                        <p>Files uploaded to your Trykst account are available by filename inside your Typst code. Pass additional files inline via the <code class="font-mono text-xs bg-blue-100 dark:bg-blue-800/40 px-1 rounded">files</code> array to supplement or override them.</p>
                     </div>
                 </div>
             {/if}

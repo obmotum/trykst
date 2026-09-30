@@ -44,8 +44,8 @@ COPY --from=backend-builder /app/server/target/release/server /app/server
 # PORT            Server listen port (default: 3000)
 # STATIC_DIR      Path to compiled frontend assets (default: /app/build)
 # DATABASE_URL    Database connection URL
-#                   SQLite:   sqlite:///data/typstdrive.db?mode=rwc
-#                   Postgres: postgres://user:pass@host:5432/typstdrive
+#                   SQLite:   sqlite:///data/trykst.db?mode=rwc
+#                   Postgres: postgres://user:pass@host:5432/trykst
 # DB_TYPE         Database backend: "sqlite" or "postgres"
 #                 Auto-detected from DATABASE_URL if not set.
 # COOKIE_SECRET        64+ byte secret for signing session cookies.
@@ -56,7 +56,7 @@ COPY --from=backend-builder /app/server/target/release/server /app/server
 # RUST_LOG             Log filter (default: server=debug,tower_http=debug)
 ENV PORT=3000
 ENV STATIC_DIR=/app/build
-ENV DATABASE_URL=sqlite:///data/typstdrive.db?mode=rwc
+ENV DATABASE_URL=sqlite:///data/trykst.db?mode=rwc
 ENV DB_TYPE=sqlite
 EXPOSE 3000
 CMD ["/app/server"]

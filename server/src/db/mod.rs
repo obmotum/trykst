@@ -8,7 +8,7 @@ pub async fn init_db() -> AnyPool {
     sqlx::any::install_default_drivers();
 
     let db_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:password@127.0.0.1:5432/typstdrive".to_string());
+        .unwrap_or_else(|_| "postgres://postgres:password@127.0.0.1:5432/trykst".to_string());
 
     // DB_TYPE can override URL-based detection: "sqlite" or "postgres"
     let db_type = std::env::var("DB_TYPE")

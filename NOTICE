@@ -1,0 +1,21 @@
+Trykst
+Collaborative Typst editor with native OIDC and seamless SSO.
+
+This product is a modified version of TypstDrive
+(https://github.com/SirBlobby/TypstDrive), Copyright 2026 SirBlobby,
+licensed under the Apache License, Version 2.0.
+
+Changes relative to TypstDrive include, among others:
+- Authentication replaced by OpenID Connect: no local accounts or passwords,
+  just-in-time provisioning, server-side sessions, RP-initiated and
+  back-channel logout
+- Roles, guest users and organizations derived from the identity provider
+- People picker backed by the identity provider's directory; invitations
+  for users who have not signed in yet
+- Removed: password login, registration, setup wizard, desktop sync API
+- Renamed to Trykst; local package namespace @trykst (@typstdrive still accepted)
+
+The individual changes are recorded in the version control history.
+
+This product includes the Typst compiler (https://github.com/typst/typst),
+licensed under the Apache License, Version 2.0.

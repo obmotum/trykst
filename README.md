@@ -1,266 +1,158 @@
-# TypstDrive
+# Trykst
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/sirblobby/typstdrive)
+**Collaborative Typst editor with native OIDC and seamless SSO.**
+
 [![Typst Version](https://img.shields.io/badge/Typst-0.15.1-239dad?logo=typst&logoColor=white)](https://typst.app/)
 [![Rust](https://img.shields.io/badge/Rust-1.82+-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-5-ff3e00?logo=svelte)](https://kit.svelte.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Bun](https://img.shields.io/badge/Bun-latest-black?logo=bun)](https://bun.sh/)
-[![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![OpenID Connect](https://img.shields.io/badge/OpenID_Connect-F78C40?logo=openid&logoColor=white)](https://openid.net/connect/)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-TypstDrive is a collaborative web editor for Typst. With built-in dark mode, multiple themes, and a clean Google Docs-like interface, it makes creating and sharing documents effortless.
+Trykst is a self-hosted web editor for [Typst](https://typst.app/) documents, built for organizations and home labs that already run an identity provider. There are no local accounts and no login page: people are signed in through your OpenID Provider (Keycloak, Authentik, Entra ID, …), so with an active IdP session opening Trykst just works.
+
+Trykst is a fork of [TypstDrive](https://github.com/SirBlobby/TypstDrive) by SirBlobby, rebuilt around OIDC. See [Origin and license](#origin-and-license).
 
 ## Features
 
-- **Real-Time Collaboration**: Powered by Yjs and CodeMirror 6, see changes and cursors from other users instantly.
-- **Instant Preview**: Compile Typst to SVG on the fly with sub-second latency, featuring interactive document zoom controls and a collapsible preview pane.
-- **Customizable Themes**: Choose from multiple editor themes (Catppuccin, Arch Linux, Cerberus) and toggle global dark mode.
-- **Export Options**: Export your compiled documents directly to PDF, PNG, SVG, HTML, Markdown, Word, or LaTeX formats using internal conversion and Pandoc integrations.
-- **Document Sharing**: Invite collaborators by email with Editor or Viewer roles. Collaborators' uploaded fonts and images are available to the compiler. A dedicated "Shared with me" folder on the dashboard surfaces all documents others have shared with you. Manage and remove collaborators directly from the Share modal in the editor.
-- **Spaces**: Multi-file editor workspaces, each with its own `typst.toml` and any number of `.typ`, `.bib`, and asset files that import and reference one another. The Space editor has full parity with the document editor — formatting tools, font selector, page settings, zoom, themes, presentation mode, and PDF/PNG/SVG/Pandoc export — plus a file tree, per-file real-time collaboration (live cursors), TOML syntax highlighting, and your account's uploaded fonts and images. Create and edit text files like `refs.bib` directly in the browser — everything a full template (e.g. an IEEE paper) needs. Create one from the `+` menu on the dashboard or manage them at `/spaces`.
-- **Global Packages**: Publish any Space as an instance-local Typst package, immutably versioned and importable everywhere as `@typstdrive/<name>:<version>` (e.g. `#import "@typstdrive/charged-ieee:0.1.4": ieee`). The name, version, and entrypoint are read from the Space's `typst.toml`. Browse published packages at `/packages`.
-- **Public REST API**: Programmatically render Typst documents to PNG, PDF, or HTML via `POST /v1/render`. Compilation failures return a `422` with a JSON body detailing each Typst error, including its message and source line and column. Manage API keys from the Settings panel, with a live usage chart supporting 1-hour, 1-day, and 1-week views. Full API reference available at `/api-docs`.
-- **Admin System**: First-run setup wizard creates an admin account. Admins can manage all users, create new accounts with temporary passwords, toggle admin privileges, and delete accounts from the Settings panel.
-- **Presentation Mode**: Turn your documents into instant slideshows with built-in slide controls and a live drawing/annotation tool overlay.
-- **Asset Management**: Upload and seamlessly use custom fonts and images directly within your documents.
-- **Desktop Sync API**: A dedicated API under `/api/desktop` lets [Typst Desktop](https://github.com/SirBlobby/typst-desktop) browse your folders, documents, Spaces, shared items, and uploaded assets, and keep them in sync locally. Device-token authentication, role-aware permissions, and hash-based conflict detection.
+### Identity and access
+- **OIDC only, seamless SSO**: authorization code flow with PKCE. Visitors without a session are sent straight to the IdP and come back to the page they asked for.
+- **Just-in-time accounts**: users are created on first sign-in and keyed by `(issuer, subject)`; name and email are kept in sync with the IdP.
+- **Roles from the IdP**: admin rights, access restriction and guest status come from a roles claim or from Keycloak Organizations membership.
+- **Guests for external users**: guests only see what was shared with them and cannot create documents, spaces, packages or API keys, nor browse the directory.
+- **Central logout**: signing out ends the IdP session too (RP-initiated logout), and back-channel logout ends Trykst sessions the moment the IdP revokes them.
+- **Server-side sessions** with a maximum age; a re-login at the IdP is silent while its session lasts.
 
-## Fonts & Images
+### Sharing
+- **People picker**: find colleagues by name, email or domain in the IdP directory, including people who have never signed in; shows avatar, organization and email.
+- **Invite before first login**: sharing with someone creates a placeholder account that is linked on their first sign-in.
+- **Roles per document**: editor or viewer, plus link sharing for anyone with the link.
 
-TypstDrive allows you to upload custom `.ttf` or `.otf` fonts and image files (`.png`, `.jpg`, `.svg`, etc.) to your folders or directly to a document's workspace.
+### Editing
+- **Real-time collaboration**: Yjs and CodeMirror 6 with live cursors.
+- **Instant preview**: Typst compiled to SVG on the fly, with zoom and a collapsible preview pane.
+- **Spaces**: multi-file projects with their own `typst.toml`, `.typ`, `.bib` and asset files, a file tree and per-file collaboration.
+- **Instance-local packages**: publish a Space as a versioned Typst package, importable everywhere as `@trykst/<name>:<version>`.
+- **Comments and version history**.
+- **Export** to PDF, PNG, SVG, HTML, Markdown, Word or LaTeX (Pandoc).
+- **Presentation mode** with slide controls and an annotation overlay.
+- **Custom fonts and images**, uploaded per account or per document.
+- **Render API**: `POST /v1/render` with API keys, documented at `/api-docs`.
+- **Themes**: Catppuccin, Arch Linux, Cerberus, light and dark.
 
-### Custom Fonts
+## Quick start
 
-Upload `.ttf` or `.otf` files from the dashboard or the editor toolbar. TypstDrive reads the typographic family name embedded in the file, registers all weight and style variants (Bold, Italic, etc.) under that family, and makes them available immediately to the Typst compiler and the `tinymist` LSP — no page refresh required.
+Trykst needs an OpenID Provider. For a local test, the repository ships a Keycloak with a ready-made realm:
 
-Use the font by its family name, which appears automatically in the editor's font dropdown:
+```bash
+git clone <your-trykst-repo-url> trykst
+cd trykst
+git clone https://github.com/typst/typst.git typst
+git -C typst checkout 9dfd3a08500b7896045f907433cf7b4b02434fad
+
+docker compose -f docker-compose.dev.yml up -d   # Keycloak on http://localhost:8080
+```
+
+Then set the variables listed at the top of `docker-compose.dev.yml` and run the server (see [Local development](#local-development)). Test users: `alice`, `bob`, `carol`, `erik` and more, the password is the username.
+
+## Self-hosting
+
+A Docker image packages the Rust backend and the SvelteKit frontend into one container. Build it from the repository:
+
+```bash
+docker compose up -d --build
+```
+
+Edit `docker-compose.yml` first: it documents every variable. Data lives in SQLite by default (`/data/trykst.db` in the `appdata` volume); PostgreSQL is supported via `DATABASE_URL` and `DB_TYPE=postgres`.
+
+### Required configuration
+
+| Variable | Example | Description |
+|---|---|---|
+| `OIDC_ISSUER` | `https://sso.example.com/realms/example` | Issuer URL; endpoints are discovered from it. |
+| `OIDC_CLIENT_ID` | `trykst` | Client id at the IdP. |
+| `OIDC_CLIENT_SECRET` | | Client secret (confidential client). |
+| `PUBLIC_URL` | `https://trykst.example.com` | Externally reachable URL of Trykst. |
+| `COOKIE_SECRET` | `openssl rand -hex 64` | 64+ byte secret; without it sessions end on every restart. |
+
+Register these URLs at the IdP:
+- Redirect URI: `<PUBLIC_URL>/api/auth/oidc/callback`
+- Post-logout redirect URI: `<PUBLIC_URL>/`
+- Back-channel logout URL: `<PUBLIC_URL>/api/auth/oidc/backchannel-logout`
+
+### Optional configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `OIDC_SCOPES` | `openid profile email` | Requested scopes. Add `organization:*` for Keycloak Organizations. |
+| `OIDC_ROLES_CLAIM` | | Dot path to the roles or groups claim, e.g. `realm_access.roles` or `groups`. |
+| `OIDC_ADMIN_ROLE` | | Members of this role are admins. Without it, the first user becomes admin and admins are managed in Trykst. |
+| `OIDC_REQUIRED_ROLE` | | Only members of this role (or guests, or home-organization members) may sign in. |
+| `OIDC_GUEST_ROLE` | | Members of this role are guests, unless they also hold the required or admin role. |
+| `OIDC_HOME_ORGANIZATIONS` | | Comma-separated organization aliases. Members are regular users; members of only other organizations are guests. |
+| `OIDC_ORGANIZATIONS_CLAIM` | `organization` | Claim holding the user's organizations. |
+| `OIDC_SUBJECT_CLAIM` | `sub` | Stable user id claim (`oid` for Entra ID). |
+| `OIDC_USERNAME_CLAIM` | `preferred_username` | Claim used as display username. |
+| `OIDC_DIRECTORY` | `none` | `keycloak` enables the people picker via the Keycloak Admin API. |
+| `OIDC_DIRECTORY_ORG_SOURCE` | `attribute` | `attribute` or `organizations` (Keycloak Organizations). |
+| `OIDC_DIRECTORY_ORG_ATTRIBUTE` | `organization` | User attribute shown as organization when the source is `attribute`. |
+| `SESSION_MAX_AGE_HOURS` | `10` | Maximum session length before a (silent) re-login at the IdP. |
+| `DATABASE_URL` | `sqlite:///data/trykst.db?mode=rwc` | SQLite or `postgres://user:pass@host:5432/trykst`. |
+| `DB_TYPE` | auto | `sqlite` or `postgres`. |
+| `PORT` | `3000` | HTTP port. |
+| `RUST_LOG` | `server=debug,tower_http=debug` | Log filter; `info` for production. |
+
+### Keycloak setup
+
+1. **Client**: confidential, standard flow, PKCE `S256`, the three URLs above.
+2. **Roles in the ID token**: in the `roles` client scope, enable *Add to ID token* on the realm roles mapper (or on the client roles mapper, depending on `OIDC_ROLES_CLAIM`).
+3. **People picker** (`OIDC_DIRECTORY=keycloak`): enable *Service accounts* on the client and grant it the `realm-management` roles `view-users` and `query-users`.
+4. **Organizations** (Keycloak 26+, optional): enable Organizations for the realm, make sure the `organization` client scope is assigned to the client (optional), and set `OIDC_SCOPES=openid profile email organization:*`, `OIDC_HOME_ORGANIZATIONS=<your alias>` and `OIDC_DIRECTORY_ORG_SOURCE=organizations`.
+
+External users sign in through Keycloak like everyone else, via an organization of their own (for example with identity brokering to their company's IdP) or with an account in your realm.
+
+> Recreating the realm instead of migrating it gives users new ids. Trykst then cannot match existing accounts. Export and import realms instead.
+
+Other providers work through the same standard settings; see `OIDC_SUBJECT_CLAIM` for Entra ID.
+
+## Fonts and images
+
+Upload `.ttf` or `.otf` fonts from the dashboard or the editor toolbar. Trykst reads the family name from the file, registers all its variants and makes them available to the compiler and the `tinymist` language server immediately:
 
 ```typst
 #set text(font: "JetBrains Mono")
 ```
 
-Bold, italic, and other variants resolve automatically as long as the corresponding font files are uploaded:
+For Google Fonts, extract the ZIP and upload all `.ttf` files at once; a variable font needs only its single file.
 
-```typst
-#set text(font: "Noto Sans")
-
-*This renders in Noto Sans Italic.*
-*#strong[This renders in Noto Sans Bold.]*
-```
-
-#### Uploading from Google Fonts
-
-Google Fonts downloads come as a ZIP containing one `.ttf` per variant (e.g., `NotoSans-Regular.ttf`, `NotoSans-Bold.ttf`, `NotoSans-Italic.ttf`). **Do not upload the ZIP** — extract it first, then select and upload all the `.ttf` files at once. The dashboard file picker supports multi-file selection.
-
-For Google Fonts that offer a **variable font** (a single file covering all weights and styles), uploading just that one file is sufficient.
-
-> The LSP restarts automatically after a font upload, providing instant autocompletion and clearing any "Unknown Font Family" warnings.
-
-### Images
-
-Uploaded images can be referenced natively using the `#image` function in Typst. Simply upload your image file (e.g., `logo.png`) to your dashboard and reference it by its exact filename in your `.typ` document.
+Uploaded images are referenced by filename, remote images by URL:
 
 ```typst
 #image("logo.png", width: 50%)
-```
-
-You can also reference remote images directly by their `http://` or `https://` URL — TypstDrive fetches them at compile time.
-
-```typst
 #image("https://example.com/logo.png", width: 50%)
 ```
 
-## Desktop Sync API
+## Local development
 
-The desktop app authenticates with a **device token** rather than a session cookie. Sign in once with `POST /api/desktop/auth/login`, then send the returned token as `Authorization: Bearer <token>` on every request. Tokens are stored hashed and can be revoked from the app by signing out.
+1. Clone Typst into `typst/` at the commit pinned in the `Dockerfile` (see [Quick start](#quick-start)).
+2. Start the dev Keycloak: `docker compose -f docker-compose.dev.yml up -d`.
+3. Install `tinymist` and put it on your `PATH`; the backend uses it for LSP features.
+4. Frontend: `npm install`, then `npm run build` (served by the backend) or `npm run dev` (proxies `/api` and `/yjs` to port 3000).
+5. Backend: set the variables from the header of `docker-compose.dev.yml`, then `cd server && cargo run`.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/desktop/auth/login` | Exchange email and password for a device token. |
-| `POST` | `/api/desktop/auth/logout` | Revoke the current device token. |
-| `GET` | `/api/desktop/auth/me` | Account the token belongs to. |
-| `GET` | `/api/desktop/spaces` | Spaces the account owns or collaborates on. |
-| `POST` | `/api/desktop/spaces` | Create a Space. |
-| `GET` | `/api/desktop/spaces/{id}` | Full Space contents in one response. |
-| `DELETE` | `/api/desktop/spaces/{id}` | Delete a Space. |
-| `GET` | `/api/desktop/spaces/{id}/manifest` | Every file with its content hash, for change detection. |
-| `GET` | `/api/desktop/spaces/{id}/file?path=` | Read one file. |
-| `PUT` | `/api/desktop/spaces/{id}/file` | Write one file. |
-| `DELETE` | `/api/desktop/spaces/{id}/file?path=` | Delete one file. |
-| `GET` | `/api/desktop/folders` | Every folder the account owns. |
-| `GET` | `/api/desktop/documents?folder_id=` | Documents in a folder, or at the root. |
-| `GET` | `/api/desktop/documents/{id}` | Read a document, with the caller's role. |
-| `PUT` | `/api/desktop/documents/{id}` | Write a document. |
-| `GET` | `/api/desktop/shared` | Documents and Spaces shared with the account. |
-| `GET` | `/api/desktop/files?folder_id=` | Uploaded images and fonts in a folder. |
-| `GET` | `/api/desktop/files/{id}` | Read an uploaded file, base64-encoded. |
+Set `CARGO_TARGET_DIR` outside synced folders such as OneDrive; the build directory grows to several gigabytes.
 
-### Permissions
+## Migrating from TypstDrive
 
-Every response carries the caller's `role` for the item. Owners and editors may write; viewers are refused with `403`. Space endpoints require owner or editor access, so a read-only Space is not writable from the desktop app.
+- Accounts are matched to IdP identities by verified email on the first sign-in.
+- Packages move from the `typstdrive` to the `trykst` namespace automatically; `#import "@typstdrive/…"` keeps working.
+- Password login, registration, the setup wizard and the desktop sync API are gone.
+- The default database file is now `trykst.db`; point `DATABASE_URL` at your existing file.
 
-### Conflict Detection
+## Origin and license
 
-A write sends the `base_hash` the client last saw. If the file on the server no longer matches that hash, the write is rejected with `409` and a body containing the server's current content, so the client can merge instead of overwriting. Text files are stored in the same Yjs format the web editor uses, so a desktop push and a browser edit stay compatible.
+Trykst is based on [TypstDrive](https://github.com/SirBlobby/TypstDrive), Copyright 2026 SirBlobby, and is distributed under the [Apache License 2.0](LICENSE) like the original. See [NOTICE](NOTICE) for attribution and a summary of the changes.
 
-## Self-Hosting
-
-TypstDrive is completely self-hostable. A Docker image packages both the Rust backend and the SvelteKit frontend into a single container.
-
-### Prerequisites
-
-- [Docker](https://docs.docker.com/get-docker/)
-- [Docker Compose](https://docs.docker.com/compose/install/)
-
-### Getting Started
-
-1. Pull the image:
-   ```bash
-   docker pull ghcr.io/sirblobby/typstdrive:latest
-   ```
-
-2. Save this as `docker-compose.yml`:
-   ```yaml
-   services:
-     app:
-       image: ghcr.io/sirblobby/typstdrive:latest
-       container_name: typstdrive
-       restart: unless-stopped
-       ports:
-         - "3000:3000"
-       environment:
-         - DATABASE_URL=sqlite:///data/typstdrive.db?mode=rwc
-         - DB_TYPE=sqlite
-         # Generate with: openssl rand -hex 64
-         - COOKIE_SECRET=your-64-plus-byte-secret-here
-         - ALLOW_REGISTRATION=false
-         - RUST_LOG=info
-       volumes:
-         - appdata:/data
-
-   volumes:
-     appdata:
-   ```
-
-3. Start it:
-   ```bash
-   docker compose up -d
-   ```
-
-4. Open your browser and navigate to `http://localhost:3000`.
-
-On first launch with no users in the database, you will be redirected to the **Setup** page to create the initial admin account.
-
-To update, pull the new image and recreate the container:
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-### Building from Source
-
-To build the image yourself instead of pulling it, clone the repository and use the bundled compose file, which builds from the local `Dockerfile`:
-
-```bash
-git clone https://github.com/sirblobby/typstdrive.git
-cd typstdrive
-docker compose up -d
-```
-
-### Data Storage
-
-By default, TypstDrive uses **SQLite** — no separate database container required. All data is stored in a single file persisted via the `appdata` Docker volume.
-
-To switch to **PostgreSQL**, uncomment the `db` service in `docker-compose.yml` and update `DATABASE_URL` and `DB_TYPE` as shown in the comments there.
-
-### Environment Variables
-
-All variables can be set in the `environment:` section of `docker-compose.yml` or passed directly to the container.
-
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | `sqlite:///data/typstdrive.db?mode=rwc` | Database connection URL. Use `sqlite:///path/to/file.db?mode=rwc` for SQLite or `postgres://user:pass@host:5432/db` for PostgreSQL. |
-| `DB_TYPE` | auto-detected | Database backend. Set to `sqlite` or `postgres`. Auto-detected from `DATABASE_URL` prefix if omitted. |
-| `PORT` | `3000` | Port the HTTP server listens on. |
-| `STATIC_DIR` | `/app/build` | Path to compiled frontend assets. |
-| `COOKIE_SECRET` | *(random)* | 64+ byte secret used to sign session cookies. **If not set, a random key is generated on startup and all sessions are invalidated on every container restart.** Generate a stable value with: `openssl rand -hex 64` |
-| `ALLOW_REGISTRATION` | `true` | Set to `false` to disable public self-registration. When disabled, the register link is hidden on the login page and the registration endpoint returns 403. Admins can still create accounts from the Settings panel. |
-| `RUST_LOG` | `server=debug,tower_http=debug` | Log filter. Set to `info` for quieter production logs. |
-
-#### Example: production-ready `docker-compose.yml` snippet
-
-```yaml
-environment:
-  - DATABASE_URL=sqlite:///data/typstdrive.db?mode=rwc
-  - DB_TYPE=sqlite
-  - PORT=3000
-  - COOKIE_SECRET=your-64-plus-byte-secret-here
-  - ALLOW_REGISTRATION=false
-  - RUST_LOG=info
-```
-
-Generate a `COOKIE_SECRET`:
-```bash
-openssl rand -hex 64
-```
-
-### Admin Panel
-
-The first account created via the setup wizard is automatically an administrator. Admins have access to an **Admin** section in Settings (`/settings`) which provides:
-
-- A list of all users with creation dates
-- **Create User** — set a username, email, and temporary password; optionally grant admin privileges immediately
-- **Toggle Admin** — promote or demote any other user
-- **Delete User** — permanently remove any account other than your own
-
-## Continuous Integration
-
-Workflows live in `.gitea/workflows` and run on Gitea Actions.
-
-| Workflow | Trigger | Purpose |
-|---|---|---|
-| `ci.yml` | push to `main` or `dev`, pull requests | Type checks and builds the frontend, then checks the backend. |
-| `docker-publish.yml` | push to `main`, `v*` tags, releases | Builds the image and pushes it to the registry, always updating the `latest` tag. |
-
-The publish workflow needs two repository secrets, since Gitea's built-in token only grants access to its own registry:
-
-| Secret | Value |
-|---|---|
-| `REGISTRY_USERNAME` | Your GitHub username. |
-| `REGISTRY_TOKEN` | A classic GitHub personal access token with the `write:packages` and `read:packages` scopes. Fine-grained tokens cannot publish to `ghcr.io`. |
-
-Set the image name with the `IMAGE_NAME` variable at the top of the workflow if you publish somewhere other than `ghcr.io/sirblobby/typstdrive`.
-
-## Contributing & Local Development
-
-Clone the official Typst compiler into the `typst/` folder before building the backend:
-
-```bash
-git clone https://github.com/typst/typst.git typst
-```
-
-### Frontend
-1. Install dependencies: `bun install`
-2. Run the dev server: `bun run dev`
-
-### Backend
-1. Install system dependencies (e.g., on Ubuntu: `sudo apt-get install libssl-dev`).
-2. Install `tinymist` and ensure it is on your `PATH` — the backend uses it for LSP features:
-   ```bash
-   curl -L -o ~/.cargo/bin/tinymist \
-     https://github.com/Myriad-Dreamin/tinymist/releases/latest/download/tinymist-linux-x64 \
-     && chmod +x ~/.cargo/bin/tinymist
-   ```
-3. Set the required environment variables (copy from `docker-compose.yml` or export them).
-4. Navigate to `server/` and run:
-   ```bash
-   cargo run
-   ```
-
-The frontend dev server proxies API calls to `localhost:3000` automatically.
+Typst is a project of the Typst team; Trykst is not affiliated with or endorsed by it.
 
 ## Screenshots
 
@@ -268,6 +160,5 @@ The frontend dev server proxies API calls to `localhost:3000` automatically.
   <img src="preview/editor.png" alt="Editor view" width="100%">
 </p>
 <p align="center">
-  <img src="preview/dashboard.png" alt="Dashboard view" width="49%">
-  <img src="preview/login.png" alt="Authentication view" width="49%">
+  <img src="preview/dashboard.png" alt="Dashboard view" width="100%">
 </p>
