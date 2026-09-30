@@ -727,7 +727,7 @@
 {/if}
 
 {#if $commentsSidebarOpen && docId}
-	<CommentsSidebar docId={docId} onClose={() => ($commentsSidebarOpen = false)} />
+	<CommentsSidebar docId={docId} readOnly={isViewer} onClose={() => ($commentsSidebarOpen = false)} />
 {/if}
 
 {#if $versionHistoryOpen && docId}

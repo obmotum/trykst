@@ -177,21 +177,77 @@ pub async fn remove_collaborator(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// The caller's effective role on a document, resolved the same way as `docs::get_document`:
+/// owner, then the collaborators table, then `documents.public_role`.
+/// Returns `None` when the document does not exist or the caller has no access.
+async fn document_role(state: &AppState, doc_id: &str, user_id: &str) -> Result<Option<String>, (StatusCode, String)> {
+    let doc = sqlx::query_as::<_, (String, Option<String>)>("SELECT owner_id, public_role FROM documents WHERE id = ?")
+        .bind(doc_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let Some((owner_id, public_role)) = doc else {
+        return Ok(None);
+    };
+
+    if owner_id == user_id {
+        return Ok(Some("owner".to_string()));
+    }
+
+    let collab_role = sqlx::query_scalar::<_, String>("SELECT role FROM collaborators WHERE document_id = ? AND user_id = ?")
+        .bind(doc_id)
+        .bind(user_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if collab_role.is_some() {
+        return Ok(collab_role);
+    }
+
+    Ok(public_role.filter(|pr| pr == "viewer" || pr == "editor"))
+}
+
+/// Comments follow the document's role semantics: anyone who can open the document
+/// (owner, editor, viewer) may read its comments, but only owners and editors may
+/// write them. A viewer is read-only everywhere else (no edits, no versions), so
+/// posting, editing or resolving comments is treated as a write as well.
+fn can_write_comments(role: &str) -> bool {
+    role == "owner" || role == "editor"
+}
+
+// resolved is BOOLEAN on Postgres and INTEGER on SQLite; the CAST makes both decode as i64.
+const COMMENT_COLUMNS: &str = "c.id, c.document_id, c.user_id, c.content, \
+     COALESCE(CAST(c.resolved AS INTEGER), 0) AS resolved, c.created_at, u.username as author_name";
+
+async fn fetch_comment(state: &AppState, comment_id: &str) -> Result<Option<Comment>, (StatusCode, String)> {
+    sqlx::query_as::<_, Comment>(&format!(
+        "SELECT {COMMENT_COLUMNS} FROM comments c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ?"
+    ))
+    .bind(comment_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
 pub async fn get_comments(
     State(state): State<AppState>,
     Path(doc_id): Path<String>,
     jar: SignedCookieJar,
 ) -> Result<Json<Vec<Comment>>, (StatusCode, String)> {
-    let _user_id = jar.get("session_user_id").map(|c| c.value().to_string())
+    let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
-    let comments = sqlx::query_as::<_, Comment>(
-        "SELECT c.id, c.document_id, c.user_id, c.content, c.resolved, c.created_at, u.username as author_name \
+    if document_role(&state, &doc_id, &user_id).await?.is_none() {
+        return Err((StatusCode::NOT_FOUND, "Document not found".to_string()));
+    }
+
+    let comments = sqlx::query_as::<_, Comment>(&format!(
+        "SELECT {COMMENT_COLUMNS} \
          FROM comments c \
          LEFT JOIN users u ON c.user_id = u.id \
          WHERE c.document_id = ? \
          ORDER BY c.created_at ASC"
-    )
+    ))
     .bind(&doc_id)
     .fetch_all(&state.db)
     .await
@@ -209,6 +265,12 @@ pub async fn add_comment(
     let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
+    let role = document_role(&state, &doc_id, &user_id).await?
+        .ok_or((StatusCode::NOT_FOUND, "Document not found".to_string()))?;
+    if !can_write_comments(&role) {
+        return Err((StatusCode::FORBIDDEN, "Viewers cannot add comments".to_string()));
+    }
+
     let comment_id = Uuid::new_v4().to_string();
 
     sqlx::query("INSERT INTO comments (id, document_id, user_id, content) VALUES (?, ?, ?, ?)")
@@ -220,16 +282,8 @@ pub async fn add_comment(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let comment = sqlx::query_as::<_, Comment>(
-        "SELECT c.id, c.document_id, c.user_id, c.content, c.resolved, c.created_at, u.username as author_name \
-         FROM comments c \
-         LEFT JOIN users u ON c.user_id = u.id \
-         WHERE c.id = ?"
-    )
-    .bind(&comment_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let comment = fetch_comment(&state, &comment_id).await?
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Comment missing after insert".to_string()))?;
 
     Ok(Json(comment))
 }
@@ -321,27 +375,31 @@ pub async fn update_comment(
     let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
-    let mut comment = sqlx::query_as::<_, Comment>(
-        "SELECT c.id, c.document_id, c.user_id, c.content, c.resolved, c.created_at, u.username as author_name \
-         FROM comments c \
-         LEFT JOIN users u ON c.user_id = u.id \
-         WHERE c.id = ? AND c.user_id = ?"
-    )
-    .bind(&comment_id)
-    .bind(&user_id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    .ok_or((StatusCode::NOT_FOUND, "Comment not found or unauthorized".to_string()))?;
+    // Comments on documents the caller cannot open are reported as missing.
+    let not_found = || (StatusCode::NOT_FOUND, "Comment not found".to_string());
+    let mut comment = fetch_comment(&state, &comment_id).await?.ok_or_else(not_found)?;
+    let role = document_role(&state, &comment.document_id, &user_id).await?.ok_or_else(not_found)?;
+
+    // The author may edit and resolve their own comment while they can still write
+    // comments; the document owner may resolve/reopen any comment but not reword it.
+    let is_author = comment.user_id == user_id && can_write_comments(&role);
+    let is_owner = role == "owner";
+    if payload.content.is_some() && !is_author {
+        return Err((StatusCode::FORBIDDEN, "Only the author can edit a comment".to_string()));
+    }
+    if payload.resolved.is_some() && !is_author && !is_owner {
+        return Err((StatusCode::FORBIDDEN, "Only the author or the document owner can resolve a comment".to_string()));
+    }
 
     if let Some(c) = payload.content {
         comment.content = c;
     }
     if let Some(r) = payload.resolved {
-        comment.resolved = r;
+        comment.resolved = r as i64;
     }
 
-    sqlx::query("UPDATE comments SET content = ?, resolved = ? WHERE id = ?")
+    // `(? <> 0)` is a BOOLEAN on Postgres and 0/1 on SQLite.
+    sqlx::query("UPDATE comments SET content = ?, resolved = (? <> 0) WHERE id = ?")
         .bind(&comment.content)
         .bind(comment.resolved)
         .bind(&comment.id)
@@ -349,16 +407,7 @@ pub async fn update_comment(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let updated_comment = sqlx::query_as::<_, Comment>(
-        "SELECT c.id, c.document_id, c.user_id, c.content, c.resolved, c.created_at, u.username as author_name \
-         FROM comments c \
-         LEFT JOIN users u ON c.user_id = u.id \
-         WHERE c.id = ?"
-    )
-    .bind(&comment.id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let updated_comment = fetch_comment(&state, &comment.id).await?.ok_or_else(not_found)?;
 
     Ok(Json(updated_comment))
 }
@@ -371,16 +420,21 @@ pub async fn delete_comment(
     let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
-    let result = sqlx::query("DELETE FROM comments WHERE id = ? AND user_id = ?")
+    let not_found = || (StatusCode::NOT_FOUND, "Comment not found".to_string());
+    let comment = fetch_comment(&state, &comment_id).await?.ok_or_else(not_found)?;
+    let role = document_role(&state, &comment.document_id, &user_id).await?.ok_or_else(not_found)?;
+
+    // Authors may delete their own comments; the document owner may moderate any comment.
+    let is_author = comment.user_id == user_id && can_write_comments(&role);
+    if !is_author && role != "owner" {
+        return Err((StatusCode::FORBIDDEN, "Only the author or the document owner can delete a comment".to_string()));
+    }
+
+    sqlx::query("DELETE FROM comments WHERE id = ?")
         .bind(&comment_id)
-        .bind(&user_id)
         .execute(&state.db)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    if result.rows_affected() == 0 {
-        return Err((StatusCode::NOT_FOUND, "Comment not found or unauthorized".to_string()));
-    }
 
     Ok(StatusCode::NO_CONTENT)
 }

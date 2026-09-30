@@ -4,7 +4,8 @@
 	import { userStore } from '../ts/auth';
 	import { commentReference } from '../ts/store';
 
-	let { docId, onClose } = $props<{ docId: string, onClose: () => void }>();
+	// Viewers may read comments but not post or resolve them (enforced by the server too).
+	let { docId, onClose, readOnly = false } = $props<{ docId: string, onClose: () => void, readOnly?: boolean }>();
 
 	type Comment = {
 		id: string;
@@ -141,9 +142,11 @@
 									<Icon icon="mdi:trash-can-outline" class="text-xs" />
 								</button>
 							{/if}
-							<button onclick={() => toggleResolve(comment)} class="p-1 hover:text-emerald-500 rounded hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors" title={comment.resolved ? "Reopen" : "Resolve"}>
-								<Icon icon={comment.resolved ? "mdi:check-circle" : "mdi:check-circle-outline"} class="text-xs" />
-							</button>
+							{#if !readOnly}
+								<button onclick={() => toggleResolve(comment)} class="p-1 hover:text-emerald-500 rounded hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors" title={comment.resolved ? "Reopen" : "Resolve"}>
+									<Icon icon={comment.resolved ? "mdi:check-circle" : "mdi:check-circle-outline"} class="text-xs" />
+								</button>
+							{/if}
 						</div>
 					</div>
 					<p class="text-sm leading-relaxed whitespace-pre-wrap">{comment.content}</p>
@@ -152,28 +155,30 @@
 		{/if}
 	</div>
 
-	<div class="p-4 border-t bg-[var(--theme-bg)] text-[var(--theme-text)] border-[var(--theme-border)]">
-		<div class="relative">
-			<textarea
-				bind:value={newCommentContent}
-				placeholder="Add a comment..."
-				class="w-full border text-[var(--theme-text)] text-sm rounded-xl px-3 py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none min-h-[80px] bg-[var(--theme-bg)] border-[var(--theme-border)]"
-				onkeydown={(e) => {
-					if (e.key === 'Enter' && !e.shiftKey) {
-						e.preventDefault();
-						postComment();
-					}
-				}}
-			></textarea>
-			<button 
-				onclick={postComment}
-				disabled={!newCommentContent.trim()}
-				class="absolute bottom-2.5 right-2.5 p-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-zinc-700 disabled:text-gray-500 rounded-lg transition-colors"
-				title="Post (Enter)"
-			>
-				<Icon icon="mdi:send" class="text-sm" />
-			</button>
+	{#if !readOnly}
+		<div class="p-4 border-t bg-[var(--theme-bg)] text-[var(--theme-text)] border-[var(--theme-border)]">
+			<div class="relative">
+				<textarea
+					bind:value={newCommentContent}
+					placeholder="Add a comment..."
+					class="w-full border text-[var(--theme-text)] text-sm rounded-xl px-3 py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none min-h-[80px] bg-[var(--theme-bg)] border-[var(--theme-border)]"
+					onkeydown={(e) => {
+						if (e.key === 'Enter' && !e.shiftKey) {
+							e.preventDefault();
+							postComment();
+						}
+					}}
+				></textarea>
+				<button 
+					onclick={postComment}
+					disabled={!newCommentContent.trim()}
+					class="absolute bottom-2.5 right-2.5 p-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-zinc-700 disabled:text-gray-500 rounded-lg transition-colors"
+					title="Post (Enter)"
+				>
+					<Icon icon="mdi:send" class="text-sm" />
+				</button>
+			</div>
+			<p class="text-[10px] mt-2 text-center">Press <kbd class="font-mono px-1 py-0.5 rounded">Enter</kbd> to post, <kbd class="font-mono px-1 py-0.5 rounded">Shift+Enter</kbd> for newline</p>
 		</div>
-		<p class="text-[10px] mt-2 text-center">Press <kbd class="font-mono px-1 py-0.5 rounded">Enter</kbd> to post, <kbd class="font-mono px-1 py-0.5 rounded">Shift+Enter</kbd> for newline</p>
-	</div>
+	{/if}
 </div>

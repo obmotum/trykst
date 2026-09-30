@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 // sqlx::Any maps SQLite INTEGER to i64 (BIGINT), not bool.
-// These helpers let us store is_admin as i64 in DB-mapped structs
-// while still serializing it as a JSON boolean for the frontend.
+// These helpers let us store boolean flags (is_admin, is_guest, resolved) as i64
+// in DB-mapped structs while still serializing them as JSON booleans for the frontend.
 mod serde_i64_bool {
     use serde::{Deserialize, Deserializer, Serializer};
     pub fn serialize<S: Serializer>(v: &i64, s: S) -> Result<S::Ok, S::Error> {
@@ -224,7 +224,8 @@ pub struct Comment {
     pub document_id: String,
     pub user_id: String,
     pub content: String,
-    pub resolved: bool,
+    #[serde(with = "serde_i64_bool")]
+    pub resolved: i64,
     pub created_at: String,
     pub author_name: Option<String>,
 }
