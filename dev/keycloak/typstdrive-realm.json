@@ -292,8 +292,7 @@
         }
       ],
       "realmRoles": [
-        "default-roles-typstdrive",
-        "typstdrive-external"
+        "default-roles-typstdrive"
       ]
     },
     {

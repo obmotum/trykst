@@ -40,6 +40,12 @@ services:
       # Members of this role are guests (external users): they only see what is shared
       # with them and cannot create documents, spaces, packages or API keys
       # - OIDC_GUEST_ROLE=typstdrive-external
+      # Guests by organization (Keycloak 26 Organizations): members of these organizations
+      # (aliases) are regular users, members of only other organizations are guests.
+      # Needs the organizations in the token: add organization:* to OIDC_SCOPES.
+      # - OIDC_HOME_ORGANIZATIONS=my-company
+      # - OIDC_SCOPES=openid profile email organization:*
+      # - OIDC_ORGANIZATIONS_CLAIM=organization
       # Claim used as the stable user id (default: sub; Entra ID: oid)
       # - OIDC_SUBJECT_CLAIM=sub
       # - OIDC_USERNAME_CLAIM=preferred_username

@@ -79,6 +79,12 @@ pub struct OidcConfig {
     /// Members of this role are guests (external users): they only see what is
     /// shared with them and cannot create content. Member/admin roles take precedence.
     pub guest_role: Option<String>,
+    /// Claim listing the user's organizations (Keycloak: `organization`, requested
+    /// with the scope `organization:*`). Either an array of aliases or an object keyed by alias.
+    pub organizations_claim: String,
+    /// Your own organizations. When set, members of other organizations are guests
+    /// (unless admin); users in no organization fall back to the role rules.
+    pub home_organizations: Vec<String>,
     pub session_max_age_secs: i64,
 }
 
@@ -116,6 +122,10 @@ impl OidcConfig {
             admin_role: optional("OIDC_ADMIN_ROLE"),
             required_role: optional("OIDC_REQUIRED_ROLE"),
             guest_role: optional("OIDC_GUEST_ROLE"),
+            organizations_claim: optional("OIDC_ORGANIZATIONS_CLAIM").unwrap_or_else(|| "organization".to_string()),
+            home_organizations: optional("OIDC_HOME_ORGANIZATIONS")
+                .map(|v| v.split(',').map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect())
+                .unwrap_or_default(),
             session_max_age_secs: session_hours * 3600,
         }
     }
@@ -215,6 +225,15 @@ fn claim_at<'a>(claims: &'a Value, path: &str) -> Option<&'a Value> {
 
 fn claim_str(claims: &Value, path: &str) -> Option<String> {
     claim_at(claims, path).and_then(Value::as_str).map(str::to_string)
+}
+
+/// Keycloak emits `organization` as `["alias"]`, or as `{"alias": {...}}` when the
+/// mapper adds organization ids or attributes. Both yield the aliases.
+fn claim_organizations(claims: &Value, path: &str) -> Option<Vec<String>> {
+    match claim_at(claims, path)? {
+        Value::Object(map) => Some(map.keys().cloned().collect()),
+        _ => claim_roles(claims, path),
+    }
 }
 
 fn claim_roles(claims: &Value, path: &str) -> Option<Vec<String>> {
@@ -349,7 +368,9 @@ pub async fn callback(
         .roles_claim
         .as_deref()
         .is_some_and(|path| claim_at(&claims, path).is_none());
-    if roles_missing || claims.get("email").is_none() {
+    let organizations_missing = !oidc.config.home_organizations.is_empty()
+        && claim_at(&claims, &oidc.config.organizations_claim).is_none();
+    if roles_missing || organizations_missing || claims.get("email").is_none() {
         merge_userinfo(oidc, &provider, token_response.access_token(), &mut claims).await;
     }
 
@@ -455,9 +476,29 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
     let has_role = |role: &Option<String>| role.as_ref().is_some_and(|r| roles.iter().any(|x| x == r));
     let is_admin_by_role = has_role(&config.admin_role);
     let is_member_by_role = has_role(&config.required_role);
-    let is_guest = has_role(&config.guest_role) && !is_admin_by_role && !is_member_by_role;
 
-    if config.required_role.is_some() && !is_member_by_role && !is_admin_by_role && !is_guest {
+    // Organization rules take precedence over the guest role when configured:
+    // in a home organization -> member; only in other organizations -> guest.
+    let organizations = if config.home_organizations.is_empty() {
+        Vec::new()
+    } else {
+        claim_organizations(claims, &config.organizations_claim).unwrap_or_else(|| {
+            tracing::warn!(
+                "Organizations claim '{}' not found. For Keycloak, request the scope \
+                 'organization:*' (OIDC_SCOPES) and keep the organization client scope assigned.",
+                config.organizations_claim
+            );
+            Vec::new()
+        })
+    };
+    let in_home_organization = organizations.iter().any(|o| config.home_organizations.contains(o));
+    let only_external_organizations = !organizations.is_empty() && !in_home_organization;
+
+    let is_guest = !is_admin_by_role
+        && !in_home_organization
+        && (only_external_organizations || (has_role(&config.guest_role) && !is_member_by_role));
+
+    if config.required_role.is_some() && !is_member_by_role && !is_admin_by_role && !in_home_organization && !is_guest {
         return Err((StatusCode::FORBIDDEN, "You are not permitted to use TypstDrive".to_string()));
     }
     let admin_from_idp = config.admin_role.is_some().then_some(is_admin_by_role);
