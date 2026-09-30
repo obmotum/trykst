@@ -32,37 +32,34 @@ pub async fn invite_collaborator(
         return Err((StatusCode::FORBIDDEN, "Only the owner can invite collaborators".to_string()));
     }
 
-    let invited_user = sqlx::query_as::<_, crate::models::User>("SELECT id, username, email, is_admin FROM users WHERE email = ?")
-        .bind(&payload.email)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    if let Some(user) = invited_user {
-        let collab_id = Uuid::new_v4().to_string();
-        let _collab = sqlx::query_as::<_, Collaborator>(
-            "INSERT INTO collaborators (id, document_id, user_id, role) VALUES (?, ?, ?, ?) ON CONFLICT (document_id, user_id) DO UPDATE SET role = excluded.role RETURNING id, document_id, user_id, role, created_at"
-        )
-        .bind(&collab_id)
-        .bind(&doc_id)
-        .bind(&user.id)
-        .bind(&payload.role)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-        let inv = Invitation {
-            id: Uuid::new_v4().to_string(),
-            document_id: doc_id.to_string(),
-            role: payload.role.clone(),
-            token: "direct-added".to_string(),
-            created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            expires_at: None,
-        };
-        Ok(Json(inv))
-    } else {
-        Err((StatusCode::NOT_FOUND, "User with that email not found".to_string()))
+    if payload.role != "editor" && payload.role != "viewer" {
+        return Err((StatusCode::BAD_REQUEST, "Role must be editor or viewer".to_string()));
     }
+    let user_id = crate::oidc::resolve_invitee(&state, payload.subject.as_deref(), payload.email.as_deref()).await?;
+    if user_id == inviter_id {
+        return Err((StatusCode::BAD_REQUEST, "You already own this document".to_string()));
+    }
+
+    let collab_id = Uuid::new_v4().to_string();
+    let _collab = sqlx::query_as::<_, Collaborator>(
+        "INSERT INTO collaborators (id, document_id, user_id, role) VALUES (?, ?, ?, ?) ON CONFLICT (document_id, user_id) DO UPDATE SET role = excluded.role RETURNING id, document_id, user_id, role, created_at"
+    )
+    .bind(&collab_id)
+    .bind(&doc_id)
+    .bind(&user_id)
+    .bind(&payload.role)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(Invitation {
+        id: Uuid::new_v4().to_string(),
+        document_id: doc_id.to_string(),
+        role: payload.role.clone(),
+        token: "direct-added".to_string(),
+        created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        expires_at: None,
+    }))
 }
 
 #[derive(Deserialize)]

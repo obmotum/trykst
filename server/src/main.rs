@@ -17,6 +17,7 @@ mod api_keys;
 mod auth;
 mod compiler;
 mod db;
+mod directory;
 mod docs;
 mod folders;
 mod files;
@@ -41,6 +42,7 @@ pub struct AppState {
     pub db: AnyPool,
     pub key: Key,
     pub oidc: Arc<oidc::Oidc>,
+    pub directory: Arc<directory::Directory>,
     pub rate_limiter: RateLimiterMap,
 }
 
@@ -81,7 +83,9 @@ async fn main() {
         }
     };
 
-    let oidc = Arc::new(oidc::Oidc::new(oidc::OidcConfig::from_env()));
+    let oidc_config = oidc::OidcConfig::from_env();
+    let directory = Arc::new(directory::Directory::from_env(&oidc_config.issuer));
+    let oidc = Arc::new(oidc::Oidc::new(oidc_config));
     oidc::spawn_session_cleanup(db.clone());
 
     let state = AppState {
@@ -90,6 +94,7 @@ async fn main() {
         db,
         key,
         oidc,
+        directory,
         rate_limiter: Arc::new(Mutex::new(HashMap::new())),
     };
 
@@ -107,6 +112,7 @@ async fn main() {
         .route("/auth/logout", post(oidc::logout))
         .route("/auth/me", get(auth::me))
         .route("/auth/storage", get(auth::storage_stats))
+        .route("/directory/search", get(directory::search))
         .route("/folders", get(folders::list_folders).post(folders::create_folder))
         .route("/folders/{id}", delete(folders::delete_folder).patch(folders::update_folder))
         .route("/fonts", get(files::list_fonts))

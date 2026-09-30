@@ -6,6 +6,8 @@
 #   alice / alice   typstdrive-user + typstdrive-admin
 #   bob   / bob     typstdrive-user
 #   carol / carol   no TypstDrive role (rejected when OIDC_REQUIRED_ROLE is set)
+#   vanessa, albrecht, mike, david, thomas, dana (password = username):
+#                   colleagues who never signed in, for testing invitations
 # Keycloak admin console: http://localhost:8080  (admin / admin)
 #
 # Then run the server on the host with:
@@ -16,6 +18,7 @@
 #   OIDC_ROLES_CLAIM=realm_access.roles
 #   OIDC_ADMIN_ROLE=typstdrive-admin
 #   OIDC_REQUIRED_ROLE=typstdrive-user
+#   OIDC_DIRECTORY=keycloak
 services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.3

@@ -571,6 +571,107 @@ async fn unique_username(state: &AppState, wanted: &str, own_id: Option<&str>) -
 }
 
 // ---------------------------------------------------------------------------
+// Invitations
+// ---------------------------------------------------------------------------
+
+/// Finds the account to share with, creating a placeholder for people who never
+/// signed in. Placeholders carry the IdP subject when the directory knows the
+/// person (linked on first login by subject) or only the email address otherwise
+/// (linked on first login by verified email, see `provision_user`).
+pub async fn resolve_invitee(state: &AppState, subject: Option<&str>, email: Option<&str>) -> Result<String, ApiError> {
+    let issuer = &state.oidc.config.issuer;
+    let email = email.map(str::trim).filter(|e| !e.is_empty());
+
+    let person = if let Some(subject) = subject {
+        let known: Option<(String,)> =
+            sqlx::query_as("SELECT id FROM users WHERE oidc_issuer = ? AND oidc_subject = ?")
+                .bind(issuer)
+                .bind(subject)
+                .fetch_optional(&state.db)
+                .await
+                .map_err(internal)?;
+        if let Some((id,)) = known {
+            return Ok(id);
+        }
+        Some(
+            state
+                .directory
+                .get(&state.oidc, subject)
+                .await?
+                .ok_or((StatusCode::NOT_FOUND, "User not found in the directory".to_string()))?,
+        )
+    } else if let Some(email) = email {
+        let known: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE LOWER(email) = LOWER(?)")
+            .bind(email)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(internal)?;
+        if let Some((id,)) = known {
+            return Ok(id);
+        }
+        match state.directory.find_by_email(&state.oidc, email).await? {
+            Some(person) => Some(person),
+            None if matches!(*state.directory, crate::directory::Directory::None) => None,
+            None => {
+                return Err((StatusCode::NOT_FOUND, "No user with this email address in the directory".to_string()))
+            }
+        }
+    } else {
+        return Err((StatusCode::BAD_REQUEST, "Choose a person or enter an email address".to_string()));
+    };
+
+    let (subject, username, email) = match person {
+        Some(p) => {
+            // Someone may already hold this email without being linked yet.
+            if let Some(mail) = &p.email {
+                let known: Option<(String,)> = sqlx::query_as(
+                    "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND oidc_subject IS NULL",
+                )
+                .bind(mail)
+                .fetch_optional(&state.db)
+                .await
+                .map_err(internal)?;
+                if let Some((id,)) = known {
+                    sqlx::query("UPDATE users SET oidc_issuer = ?, oidc_subject = ? WHERE id = ?")
+                        .bind(issuer)
+                        .bind(&p.subject)
+                        .bind(&id)
+                        .execute(&state.db)
+                        .await
+                        .map_err(internal)?;
+                    return Ok(id);
+                }
+            }
+            (Some(p.subject), p.username, p.email)
+        }
+        None => {
+            let email = email.unwrap_or_default().to_string();
+            if !email.contains('@') {
+                return Err((StatusCode::BAD_REQUEST, "Enter a valid email address".to_string()));
+            }
+            let local = email.split('@').next().unwrap_or("user").to_string();
+            (None, local, Some(email))
+        }
+    };
+
+    let id = Uuid::new_v4().to_string();
+    let username = unique_username(state, &username, None).await?;
+    sqlx::query(
+        "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject) VALUES (?, ?, ?, '', 0, ?, ?)",
+    )
+    .bind(&id)
+    .bind(&username)
+    .bind(&email)
+    .bind(subject.as_ref().map(|_| issuer.clone()))
+    .bind(&subject)
+    .execute(&state.db)
+    .await
+    .map_err(internal)?;
+    tracing::info!("Created placeholder account {username} ({id}) for an invitation");
+    Ok(id)
+}
+
+// ---------------------------------------------------------------------------
 // Logout
 // ---------------------------------------------------------------------------
 

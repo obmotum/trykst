@@ -198,7 +198,7 @@ pub struct CollaboratorView {
     pub id: String,
     pub user_id: String,
     pub username: String,
-    pub email: String,
+    pub email: Option<String>,
     pub role: String,
     pub created_at: String,
 }
@@ -253,7 +253,9 @@ pub struct CreateVersionRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InviteRequest {
-    pub email: String,
+    /// IdP subject from a directory search result.
+    pub subject: Option<String>,
+    pub email: Option<String>,
     pub role: String,
 }
 

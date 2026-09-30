@@ -4,8 +4,14 @@
   "sslRequired": "none",
   "roles": {
     "realm": [
-      { "name": "typstdrive-user", "description": "May sign in to TypstDrive" },
-      { "name": "typstdrive-admin", "description": "TypstDrive administrator" }
+      {
+        "name": "typstdrive-user",
+        "description": "May sign in to TypstDrive"
+      },
+      {
+        "name": "typstdrive-admin",
+        "description": "TypstDrive administrator"
+      }
     ]
   },
   "clients": [
@@ -19,8 +25,13 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "frontchannelLogout": false,
-      "redirectUris": ["http://localhost:3000/*", "http://localhost:5173/*"],
-      "webOrigins": ["+"],
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "+",
@@ -53,8 +64,23 @@
       "firstName": "Alice",
       "lastName": "Admin",
       "enabled": true,
-      "credentials": [{ "type": "password", "value": "alice", "temporary": false }],
-      "realmRoles": ["default-roles-typstdrive", "typstdrive-user", "typstdrive-admin"]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-typstdrive",
+        "typstdrive-user",
+        "typstdrive-admin"
+      ],
+      "attributes": {
+        "organization": [
+          "Example IT Solutions GmbH"
+        ]
+      }
     },
     {
       "username": "bob",
@@ -63,8 +89,22 @@
       "firstName": "Bob",
       "lastName": "User",
       "enabled": true,
-      "credentials": [{ "type": "password", "value": "bob", "temporary": false }],
-      "realmRoles": ["default-roles-typstdrive", "typstdrive-user"]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "bob",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-typstdrive",
+        "typstdrive-user"
+      ],
+      "attributes": {
+        "organization": [
+          "Example IT Solutions GmbH"
+        ]
+      }
     },
     {
       "username": "carol",
@@ -73,14 +113,184 @@
       "firstName": "Carol",
       "lastName": "NoAccess",
       "enabled": true,
-      "credentials": [{ "type": "password", "value": "carol", "temporary": false }],
-      "realmRoles": ["default-roles-typstdrive"]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "carol",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-typstdrive"
+      ]
+    },
+    {
+      "username": "vanessa",
+      "email": "vanessa@example.test",
+      "emailVerified": true,
+      "firstName": "Vanessa",
+      "lastName": "Lingk",
+      "enabled": true,
+      "attributes": {
+        "organization": [
+          "Example IT Solutions GmbH"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "vanessa",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-typstdrive",
+        "typstdrive-user"
+      ]
+    },
+    {
+      "username": "albrecht",
+      "email": "albrecht@example.test",
+      "emailVerified": true,
+      "firstName": "Albrecht",
+      "lastName": "Arnold",
+      "enabled": true,
+      "attributes": {
+        "organization": [
+          "Example IT Solutions GmbH"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "albrecht",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-typstdrive",
+        "typstdrive-user"
+      ]
+    },
+    {
+      "username": "mike",
+      "email": "mike@example.test",
+      "emailVerified": true,
+      "firstName": "Mike",
+      "lastName": "Hammerschmidt",
+      "enabled": true,
+      "attributes": {
+        "organization": [
+          "Example IT Solutions GmbH"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "mike",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-typstdrive",
+        "typstdrive-user"
+      ]
+    },
+    {
+      "username": "david",
+      "email": "david@example.test",
+      "emailVerified": true,
+      "firstName": "David",
+      "lastName": "Franzen",
+      "enabled": true,
+      "attributes": {
+        "organization": [
+          "Example IT Solutions GmbH"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "david",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-typstdrive",
+        "typstdrive-user"
+      ]
+    },
+    {
+      "username": "thomas",
+      "email": "thomas@example.test",
+      "emailVerified": true,
+      "firstName": "Thomas",
+      "lastName": "Krall",
+      "enabled": true,
+      "attributes": {
+        "organization": [
+          "Example IT Solutions GmbH"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "thomas",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-typstdrive",
+        "typstdrive-user"
+      ]
+    },
+    {
+      "username": "dana",
+      "email": "dana@example.test",
+      "emailVerified": true,
+      "firstName": "Dana",
+      "lastName": "Schulz",
+      "enabled": true,
+      "attributes": {
+        "organization": [
+          "Example IT Solutions GmbH"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dana",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-typstdrive",
+        "typstdrive-user"
+      ]
     },
     {
       "username": "service-account-typstdrive",
       "enabled": true,
       "serviceAccountClientId": "typstdrive",
-      "clientRoles": { "realm-management": ["view-users", "query-users"] }
+      "clientRoles": {
+        "realm-management": [
+          "view-users",
+          "query-users"
+        ]
+      }
     }
-  ]
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\": [{\"name\": \"username\", \"displayName\": \"${username}\", \"validations\": {\"length\": {\"min\": 3, \"max\": 255}, \"username-prohibited-characters\": {}, \"up-username-not-idn-homograph\": {}}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"email\", \"displayName\": \"${email}\", \"validations\": {\"email\": {}, \"length\": {\"max\": 255}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"firstName\", \"displayName\": \"${firstName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"lastName\", \"displayName\": \"${lastName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}], \"groups\": [{\"name\": \"user-metadata\", \"displayHeader\": \"User metadata\", \"displayDescription\": \"Attributes, which refer to user metadata\"}], \"unmanagedAttributePolicy\": \"ENABLED\"}"
+          ]
+        }
+      }
+    ]
+  }
 }
