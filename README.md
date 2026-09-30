@@ -150,7 +150,7 @@ Set `CARGO_TARGET_DIR` outside synced folders such as OneDrive; the build direct
 
 ## Origin and license
 
-Trykst is based on [TypstDrive](https://github.com/SirBlobby/TypstDrive), Copyright 2026 SirBlobby, and is distributed under the [Apache License 2.0](LICENSE) like the original. See [NOTICE](NOTICE) for attribution and a summary of the changes.
+Trykst is a fork of [TypstDrive](https://github.com/SirBlobby/TypstDrive), Copyright 2026 SirBlobby, maintained by Aleksandar Trkulja. It is distributed under the [Apache License 2.0](LICENSE) like the original. See [NOTICE](NOTICE) for attribution and a summary of the changes.
 
 Typst is a project of the Typst team; Trykst is not affiliated with or endorsed by it.
 

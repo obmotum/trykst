@@ -1,6 +1,8 @@
 Trykst
 Collaborative Typst editor with native OIDC and seamless SSO.
 
+Modifications Copyright 2026 Aleksandar Trkulja
+
 This product is a modified version of TypstDrive
 (https://github.com/SirBlobby/TypstDrive), Copyright 2026 SirBlobby,
 licensed under the Apache License, Version 2.0.
