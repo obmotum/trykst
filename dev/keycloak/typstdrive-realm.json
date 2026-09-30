@@ -320,5 +320,64 @@
         }
       }
     ]
-  }
+  },
+  "organizationsEnabled": true,
+  "organizations": [
+    {
+      "name": "Example IT Solutions GmbH",
+      "alias": "example",
+      "enabled": true,
+      "domains": [
+        {
+          "name": "example.test",
+          "verified": true
+        }
+      ],
+      "members": [
+        {
+          "username": "alice"
+        },
+        {
+          "username": "bob"
+        },
+        {
+          "username": "vanessa"
+        },
+        {
+          "username": "albrecht"
+        },
+        {
+          "username": "mike"
+        },
+        {
+          "username": "david"
+        },
+        {
+          "username": "thomas"
+        },
+        {
+          "username": "dana"
+        }
+      ]
+    },
+    {
+      "name": "Partner AG",
+      "alias": "partner-ag",
+      "enabled": true,
+      "domains": [
+        {
+          "name": "partner.test",
+          "verified": true
+        }
+      ],
+      "members": [
+        {
+          "username": "erik"
+        },
+        {
+          "username": "vanessa"
+        }
+      ]
+    }
+  ]
 }

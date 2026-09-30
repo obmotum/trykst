@@ -9,6 +9,8 @@
 #   vanessa, albrecht, mike, david, thomas, dana (password = username):
 #                   colleagues who never signed in, for testing invitations
 #   erik  / erik    external guest (typstdrive-external, organization "Partner AG")
+# Organizations: "Example IT Solutions GmbH" (everyone above except carol and erik)
+#   and "Partner AG" (erik, vanessa)
 # Keycloak admin console: http://localhost:8080  (admin / admin)
 #
 # Then run the server on the host with:
@@ -21,6 +23,7 @@
 #   OIDC_REQUIRED_ROLE=typstdrive-user
 #   OIDC_GUEST_ROLE=typstdrive-external
 #   OIDC_DIRECTORY=keycloak
+#   OIDC_DIRECTORY_ORG_SOURCE=organizations
 services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.3

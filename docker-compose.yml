@@ -47,7 +47,10 @@ services:
       # People picker for sharing: search colleagues at the IdP, including those who
       # never signed in (keycloak: service account with view-users + query-users)
       # - OIDC_DIRECTORY=keycloak
-      # Keycloak user attribute shown next to the name in the people picker
+      # Organization shown next to the name in the people picker:
+      #   attribute     = Keycloak user attribute OIDC_DIRECTORY_ORG_ATTRIBUTE (default)
+      #   organizations = Keycloak Organizations membership (Keycloak 26+)
+      # - OIDC_DIRECTORY_ORG_SOURCE=organizations
       # - OIDC_DIRECTORY_ORG_ATTRIBUTE=organization
       # Maximum session length before a (silent) re-login at the IdP (default: 10)
       # - SESSION_MAX_AGE_HOURS=10

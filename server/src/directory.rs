@@ -13,8 +13,13 @@
 //!
 //! Further backends (Microsoft Graph, SCIM, ...) slot in as new enum variants.
 //!
-//! Keycloak user attributes shown in the people picker (optional):
-//! `OIDC_DIRECTORY_ORG_ATTRIBUTE` (default `organization`) and `picture` (avatar URL).
+//! The organization shown next to a name in the people picker comes from
+//! `OIDC_DIRECTORY_ORG_SOURCE`:
+//! - `attribute` (default): the user attribute `OIDC_DIRECTORY_ORG_ATTRIBUTE`
+//!   (default `organization`), e.g. filled by an LDAP mapper
+//! - `organizations`: Keycloak Organizations membership (Keycloak 26+)
+//!
+//! The optional user attribute `picture` (URL) is shown as avatar.
 
 use axum::{
     extract::{Query, State},
@@ -24,6 +29,7 @@ use axum::{
 use axum_extra::extract::cookie::SignedCookieJar;
 use openidconnect::reqwest;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -33,6 +39,8 @@ type ApiError = (StatusCode, String);
 
 const DEFAULT_LIMIT: usize = 5;
 const MAX_LIMIT: usize = 25;
+/// Organization memberships change rarely; avoid one admin API call per keystroke.
+const ORG_CACHE_SECS: i64 = 300;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DirectoryUser {
@@ -92,8 +100,22 @@ impl Directory {
 pub struct KeycloakDirectory {
     token_url: String,
     admin_url: String,
-    org_attribute: String,
+    org_source: OrgSource,
     token: Mutex<Option<(String, i64)>>,
+    /// subject -> (organization names, expires at)
+    org_cache: Mutex<HashMap<String, (Vec<String>, i64)>>,
+}
+
+enum OrgSource {
+    Attribute(String),
+    Organizations,
+}
+
+#[derive(Deserialize)]
+struct KeycloakOrganization {
+    name: String,
+    #[serde(default = "enabled_default")]
+    enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -163,11 +185,18 @@ impl KeycloakDirectory {
         Some(KeycloakDirectory {
             token_url: format!("{issuer}/protocol/openid-connect/token"),
             admin_url: format!("{base}/admin{realm_path}"),
-            org_attribute: std::env::var("OIDC_DIRECTORY_ORG_ATTRIBUTE")
-                .ok()
-                .filter(|v| !v.trim().is_empty())
-                .unwrap_or_else(|| "organization".to_string()),
+            org_source: match std::env::var("OIDC_DIRECTORY_ORG_SOURCE").unwrap_or_default().to_lowercase().as_str() {
+                "" | "attribute" => OrgSource::Attribute(
+                    std::env::var("OIDC_DIRECTORY_ORG_ATTRIBUTE")
+                        .ok()
+                        .filter(|v| !v.trim().is_empty())
+                        .unwrap_or_else(|| "organization".to_string()),
+                ),
+                "organizations" => OrgSource::Organizations,
+                other => panic!("Unknown OIDC_DIRECTORY_ORG_SOURCE '{other}'. Expected 'attribute' or 'organizations'."),
+            },
             token: Mutex::new(None),
+            org_cache: Mutex::new(HashMap::new()),
         })
     }
 
@@ -229,16 +258,68 @@ impl KeycloakDirectory {
         Ok(users
             .into_iter()
             .filter(|u| u.enabled && !u.username.starts_with("service-account-"))
-            .map(|u| u.into_directory_user(&self.org_attribute))
+            .map(|u| u.into_directory_user(self.org_attribute()))
             .collect())
+    }
+
+    fn org_attribute(&self) -> &str {
+        match &self.org_source {
+            OrgSource::Attribute(name) => name,
+            // Never matches a real attribute, so `organization` stays empty until filled below.
+            OrgSource::Organizations => "",
+        }
+    }
+
+    /// Organization names the user belongs to (Keycloak Organizations), cached.
+    async fn organizations_of(&self, oidc: &Oidc, subject: &str) -> Option<Vec<String>> {
+        let now = chrono::Utc::now().timestamp();
+        if let Some((names, expires)) = self.org_cache.lock().await.get(subject) {
+            if *expires > now {
+                return Some(names.clone());
+            }
+        }
+        let token = self.token(oidc).await.ok()?;
+        let response = oidc
+            .http()
+            .get(format!("{}/organizations/members/{subject}/organizations", self.admin_url))
+            .bearer_auth(token)
+            .send()
+            .await
+            .ok()?;
+        if !response.status().is_success() {
+            tracing::warn!(
+                "Keycloak organizations lookup returned {}; are Organizations enabled for the realm?",
+                response.status()
+            );
+            return None;
+        }
+        let body = response.bytes().await.ok()?;
+        let orgs: Vec<KeycloakOrganization> = serde_json::from_slice(&body).ok()?;
+        let names: Vec<String> = orgs.into_iter().filter(|o| o.enabled).map(|o| o.name).collect();
+        self.org_cache.lock().await.insert(subject.to_string(), (names.clone(), now + ORG_CACHE_SECS));
+        Some(names)
+    }
+
+    async fn with_organizations(&self, oidc: &Oidc, mut users: Vec<DirectoryUser>) -> Vec<DirectoryUser> {
+        if !matches!(self.org_source, OrgSource::Organizations) {
+            return users;
+        }
+        let lookups = users.iter().map(|u| self.organizations_of(oidc, &u.subject));
+        let results = futures_util::future::join_all(lookups).await;
+        for (user, orgs) in users.iter_mut().zip(results) {
+            user.organization = orgs.filter(|o| !o.is_empty()).map(|o| o.join(", "));
+        }
+        users
     }
 
     async fn search(&self, oidc: &Oidc, query: &str, limit: usize) -> Result<Vec<DirectoryUser>, ApiError> {
         let max = limit.to_string();
         // Keycloak matches prefixes by default; wildcards make "example" find "@example.com".
         let infix = format!("*{}*", query.replace('*', ""));
-        self.users(oidc, &[("search", &infix), ("max", &max), ("briefRepresentation", "false")])
-            .await
+        let users = self
+            .users(oidc, &[("search", &infix), ("max", &max), ("briefRepresentation", "false")])
+            .await?;
+        Ok(self.with_organizations(oidc, users).await)
     }
 
     async fn find_by_email(&self, oidc: &Oidc, email: &str) -> Result<Option<DirectoryUser>, ApiError> {
@@ -269,7 +350,7 @@ impl KeycloakDirectory {
         }
         let body = response.bytes().await.map_err(upstream)?;
         let user: KeycloakUser = serde_json::from_slice(&body).map_err(upstream)?;
-        Ok(user.enabled.then(|| user.into_directory_user(&self.org_attribute)))
+        Ok(user.enabled.then(|| user.into_directory_user(self.org_attribute())))
     }
 }
 
