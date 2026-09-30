@@ -18,9 +18,7 @@ mod serde_i64_bool {
 pub struct User {
     pub id: String,
     pub username: String,
-    pub email: String,
-    #[serde(skip_serializing)]
-    pub password_hash: String,
+    pub email: Option<String>,
     #[serde(with = "serde_i64_bool")]
     pub is_admin: i64,
 }
@@ -29,7 +27,7 @@ pub struct User {
 pub struct AdminUserView {
     pub id: String,
     pub username: String,
-    pub email: String,
+    pub email: Option<String>,
     #[serde(with = "serde_i64_bool")]
     pub is_admin: i64,
     pub created_at: String,
@@ -160,31 +158,6 @@ pub struct PublishPackageRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RegisterRequest {
-    pub username: String,
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LoginRequest {
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateProfileRequest {
-    pub username: String,
-    pub email: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ChangePasswordRequest {
-    pub current_password: String,
-    pub new_password: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct CreateFolderRequest {
     pub name: String,
     pub parent_id: Option<String>,
@@ -284,14 +257,6 @@ pub struct InviteRequest {
     pub role: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AdminCreateUserRequest {
-    pub username: String,
-    pub email: String,
-    pub password: String,
-    pub is_admin: Option<bool>,
-}
-
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct UsagePoint {
     pub date: String,
@@ -314,21 +279,6 @@ pub struct CreateApiKeyRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SetupRequest {
-    pub username: String,
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SetupStatus {
-    pub needs_setup: bool,
-    pub registration_enabled: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateUserRequest {
     pub is_admin: Option<bool>,
-    pub username: Option<String>,
-    pub email: Option<String>,
 }

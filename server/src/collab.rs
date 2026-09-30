@@ -32,7 +32,7 @@ pub async fn invite_collaborator(
         return Err((StatusCode::FORBIDDEN, "Only the owner can invite collaborators".to_string()));
     }
 
-    let invited_user = sqlx::query_as::<_, crate::models::User>("SELECT id, username, email, password_hash, is_admin FROM users WHERE email = ?")
+    let invited_user = sqlx::query_as::<_, crate::models::User>("SELECT id, username, email, is_admin FROM users WHERE email = ?")
         .bind(&payload.email)
         .fetch_optional(&state.db)
         .await

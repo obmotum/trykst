@@ -1,7 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { onMount, onDestroy } from 'svelte';
-    import { userStore } from '$lib/ts/auth';
+    import { userStore, logout, redirectToLogin } from '$lib/ts/auth';
     import Icon from '@iconify/svelte';
     import ThemePicker from '$lib/components/ThemePicker.svelte';
     import Footer from '$lib/components/Footer.svelte';
@@ -26,19 +26,6 @@
     };
 
     let activeSection = $state('account');
-
-    let username = $state('');
-    let email = $state('');
-    let isSaving = $state(false);
-    let profileError = $state('');
-    let profileSuccess = $state(false);
-
-    let currentPassword = $state('');
-    let newPassword = $state('');
-    let confirmPassword = $state('');
-    let isSavingPassword = $state(false);
-    let passwordError = $state('');
-    let passwordSuccess = $state(false);
 
     let storageStats = $state<{ documents_size_bytes: number; files_size_bytes: number; total_size_bytes: number } | null>(null);
 
@@ -70,14 +57,6 @@
     let chartCanvas = $state<HTMLCanvasElement | null>(null);
     let chartInstance: Chart | null = null;
 
-    let showCreateForm = $state(false);
-    let createUsername = $state('');
-    let createEmail = $state('');
-    let createPassword = $state('');
-    let createIsAdmin = $state(false);
-    let createError = $state('');
-    let createLoading = $state(false);
-
     function formatBytes(bytes: number) {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
@@ -91,9 +70,7 @@
     }
 
     onMount(async () => {
-        if (!$userStore) { goto('/login'); return; }
-        username = $userStore.username;
-        email = $userStore.email || '';
+        if (!$userStore) { redirectToLogin(); return; }
         try {
             const res = await fetch('/api/auth/storage');
             if (res.ok) storageStats = await res.json();
@@ -309,6 +286,8 @@
         if (res.ok) {
             const updated: AdminUser = await res.json();
             adminUsers = adminUsers.map(u => u.id === updated.id ? updated : u);
+        } else {
+            adminError = await res.text() || 'Failed to update user.';
         }
     }
 
@@ -320,87 +299,6 @@
         }
         deletingUserId = null;
         confirmDeleteId = null;
-    }
-
-    async function createUser(e: Event) {
-        e.preventDefault();
-        createError = '';
-        createLoading = true;
-        try {
-            const res = await fetch('/api/admin/users', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: createUsername, email: createEmail, password: createPassword, is_admin: createIsAdmin })
-            });
-            if (!res.ok) {
-                createError = await res.text() || 'Failed to create user.';
-            } else {
-                const created: AdminUser = await res.json();
-                adminUsers = [...adminUsers, created];
-                showCreateForm = false;
-                createUsername = '';
-                createEmail = '';
-                createPassword = '';
-                createIsAdmin = false;
-            }
-        } catch {
-            createError = 'Network error.';
-        }
-        createLoading = false;
-    }
-
-    async function logout() {
-        await fetch('/api/auth/logout', { method: 'POST' });
-        userStore.set(null);
-        goto('/login');
-    }
-
-    async function saveProfile() {
-        if (username === $userStore?.username && email === $userStore?.email) return;
-        isSaving = true;
-        profileError = '';
-        profileSuccess = false;
-        try {
-            const res = await fetch('/api/auth/me', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, email })
-            });
-            if (!res.ok) {
-                profileError = await res.text() || 'Failed to update profile';
-            } else {
-                userStore.set(await res.json());
-                profileSuccess = true;
-            }
-        } catch {
-            profileError = 'Network error occurred.';
-        }
-        isSaving = false;
-    }
-
-    async function changePassword() {
-        passwordError = '';
-        passwordSuccess = false;
-        if (newPassword !== confirmPassword) { passwordError = "New passwords don't match."; return; }
-        isSavingPassword = true;
-        try {
-            const res = await fetch('/api/auth/change-password', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
-            });
-            if (!res.ok) {
-                passwordError = await res.text() || 'Failed to change password';
-            } else {
-                passwordSuccess = true;
-                currentPassword = '';
-                newPassword = '';
-                confirmPassword = '';
-            }
-        } catch {
-            passwordError = 'Network error occurred.';
-        }
-        isSavingPassword = false;
     }
 
     const navItems = $derived([
@@ -484,69 +382,10 @@
 
                         <div class="h-px bg-gray-200 dark:bg-white/10 mb-6"></div>
 
-                        <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-4">Profile</h3>
-
-                        {#if profileError}
-                            <div class="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-4">{profileError}</div>
-                        {/if}
-                        {#if profileSuccess}
-                            <div class="bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 p-3 rounded-lg text-sm mb-4">Profile updated successfully.</div>
-                        {/if}
-
-                        <div class="space-y-4">
-                            <div>
-                                <label for="username-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
-                                <input id="username-input" type="text" bind:value={username} class="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" />
-                            </div>
-                            <div>
-                                <label for="email-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email Address</label>
-                                <input id="email-input" type="email" bind:value={email} class="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" />
-                            </div>
-                            <button onclick={saveProfile} disabled={isSaving || (username === $userStore?.username && email === $userStore?.email)} class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm">
-                                {#if isSaving}
-                                    <Icon icon="mdi:loading" class="animate-spin text-lg" />
-                                    Saving...
-                                {:else}
-                                    <Icon icon="mdi:content-save" class="text-lg" />
-                                    Save Profile
-                                {/if}
-                            </button>
-                        </div>
-
-                        <div class="h-px bg-gray-200 dark:bg-white/10 my-6"></div>
-
-                        <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-4">Change Password</h3>
-
-                        {#if passwordError}
-                            <div class="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-4">{passwordError}</div>
-                        {/if}
-                        {#if passwordSuccess}
-                            <div class="bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 p-3 rounded-lg text-sm mb-4">Password changed successfully.</div>
-                        {/if}
-
-                        <div class="space-y-4">
-                            <div>
-                                <label for="current-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Current Password</label>
-                                <input id="current-password" type="password" bind:value={currentPassword} class="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" />
-                            </div>
-                            <div>
-                                <label for="new-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">New Password</label>
-                                <input id="new-password" type="password" bind:value={newPassword} class="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" />
-                            </div>
-                            <div>
-                                <label for="confirm-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Confirm New Password</label>
-                                <input id="confirm-password" type="password" bind:value={confirmPassword} class="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" />
-                            </div>
-                            <button onclick={changePassword} disabled={isSavingPassword || !currentPassword || !newPassword || !confirmPassword} class="bg-gray-200 hover:bg-gray-300 text-gray-800 dark:bg-white/10 dark:hover:bg-white/20 dark:text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2">
-                                {#if isSavingPassword}
-                                    <Icon icon="mdi:loading" class="animate-spin text-lg" />
-                                    Updating...
-                                {:else}
-                                    <Icon icon="mdi:lock-reset" class="text-lg" />
-                                    Update Password
-                                {/if}
-                            </button>
-                        </div>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 flex items-start gap-2">
+                            <Icon icon="mdi:shield-account-outline" class="text-lg flex-shrink-0" />
+                            Your name, email address and password are managed by your organization's identity provider. Changes made there are picked up the next time you sign in.
+                        </p>
                     </div>
                 </div>
             {/if}
@@ -813,90 +652,14 @@
             {#if activeSection === 'admin' && $userStore?.is_admin}
                 <div class="bg-white dark:bg-black/20 rounded-xl shadow-sm border border-gray-200 dark:border-white/10 overflow-hidden">
                     <div class="p-6 sm:p-8">
-                        <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center justify-between mb-2">
                             <h2 class="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                 <Icon icon="mdi:shield-crown-outline" class="text-2xl text-amber-500 dark:text-amber-400" />
                                 User Management
                             </h2>
-                            <div class="flex items-center gap-3">
-                                <span class="text-sm text-gray-500 dark:text-gray-400">{adminUsers.length} user{adminUsers.length !== 1 ? 's' : ''}</span>
-                                <button
-                                    onclick={() => { showCreateForm = !showCreateForm; createError = ''; }}
-                                    class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors {showCreateForm ? 'bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-gray-300' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'}"
-                                >
-                                    <Icon icon={showCreateForm ? 'mdi:close' : 'mdi:account-plus-outline'} class="text-base" />
-                                    {showCreateForm ? 'Cancel' : 'New User'}
-                                </button>
-                            </div>
+                            <span class="text-sm text-gray-500 dark:text-gray-400">{adminUsers.length} user{adminUsers.length !== 1 ? 's' : ''}</span>
                         </div>
-
-                        {#if showCreateForm}
-                            <form onsubmit={createUser} class="mb-6 p-4 rounded-xl border border-blue-200 dark:border-blue-800/50 bg-blue-50/50 dark:bg-blue-900/10 space-y-3">
-                                <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                                    <Icon icon="mdi:account-plus-outline" class="text-blue-500" />
-                                    Create New User
-                                </h3>
-
-                                {#if createError}
-                                    <div class="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-3 py-2 rounded-lg text-sm">{createError}</div>
-                                {/if}
-
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div>
-                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
-                                        <input
-                                            type="text"
-                                            required
-                                            bind:value={createUsername}
-                                            placeholder="username"
-                                            class="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
-                                        <input
-                                            type="email"
-                                            required
-                                            bind:value={createEmail}
-                                            placeholder="user@example.com"
-                                            class="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                        />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Temporary Password</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        bind:value={createPassword}
-                                        placeholder="Set a password the user can change later"
-                                        class="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/20 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors font-mono"
-                                    />
-                                </div>
-                                <div class="flex items-center justify-between pt-1">
-                                    <label class="flex items-center gap-2 cursor-pointer select-none">
-                                        <input type="checkbox" bind:checked={createIsAdmin} class="w-4 h-4 rounded accent-amber-500" />
-                                        <span class="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-1">
-                                            <Icon icon="mdi:shield-crown-outline" class="text-amber-500 text-base" />
-                                            Grant admin privileges
-                                        </span>
-                                    </label>
-                                    <button
-                                        type="submit"
-                                        disabled={createLoading}
-                                        class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm"
-                                    >
-                                        {#if createLoading}
-                                            <Icon icon="mdi:loading" class="animate-spin text-base" />
-                                            Creating...
-                                        {:else}
-                                            <Icon icon="mdi:account-plus-outline" class="text-base" />
-                                            Create User
-                                        {/if}
-                                    </button>
-                                </div>
-                            </form>
-                        {/if}
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">Accounts are created automatically when someone signs in for the first time. To revoke someone's access, disable their account in the identity provider.</p>
 
                         {#if adminError}
                             <div class="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-4">{adminError}</div>

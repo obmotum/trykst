@@ -1,14 +1,8 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { userStore } from '$lib/ts/auth';
+    import { userStore, logout } from '$lib/ts/auth';
     import Icon from '@iconify/svelte';
     import ThemePicker from '$lib/components/ThemePicker.svelte';
-
-    async function logout() {
-        await fetch('/api/auth/logout', { method: 'POST' });
-        userStore.set(null);
-        goto('/login');
-    }
 </script>
 
 <nav class="bg-[var(--theme-bg)] shadow-sm border-b border-gray-200 dark:border-white/10 px-6 py-4 flex justify-between items-center sticky top-0 z-10 transition-colors duration-200">

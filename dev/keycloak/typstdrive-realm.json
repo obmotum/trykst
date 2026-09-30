@@ -1,0 +1,86 @@
+{
+  "realm": "typstdrive",
+  "enabled": true,
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      { "name": "typstdrive-user", "description": "May sign in to TypstDrive" },
+      { "name": "typstdrive-admin", "description": "TypstDrive administrator" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "typstdrive",
+      "name": "TypstDrive (dev)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "typstdrive-dev-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "frontchannelLogout": false,
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:5173/*"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+",
+        "backchannel.logout.url": "http://host.docker.internal:3000/api/auth/oidc/backchannel-logout",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles in ID token",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_access.roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@example.test",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Admin",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "alice", "temporary": false }],
+      "realmRoles": ["default-roles-typstdrive", "typstdrive-user", "typstdrive-admin"]
+    },
+    {
+      "username": "bob",
+      "email": "bob@example.test",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "User",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "bob", "temporary": false }],
+      "realmRoles": ["default-roles-typstdrive", "typstdrive-user"]
+    },
+    {
+      "username": "carol",
+      "email": "carol@example.test",
+      "emailVerified": true,
+      "firstName": "Carol",
+      "lastName": "NoAccess",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "carol", "temporary": false }],
+      "realmRoles": ["default-roles-typstdrive"]
+    },
+    {
+      "username": "service-account-typstdrive",
+      "enabled": true,
+      "serviceAccountClientId": "typstdrive",
+      "clientRoles": { "realm-management": ["view-users", "query-users"] }
+    }
+  ]
+}

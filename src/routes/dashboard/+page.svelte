@@ -1,7 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { onMount } from 'svelte';
-    import { userStore } from '$lib/ts/auth';
+    import { userStore, redirectToLogin } from '$lib/ts/auth';
     import { themeStore, darkModeStore } from '$lib/ts/store';
     import Icon from '@iconify/svelte';
     import ThemePicker from '$lib/components/ThemePicker.svelte';
@@ -277,7 +277,7 @@
 
     onMount(() => {
         if (!$userStore) {
-            goto('/login');
+            redirectToLogin();
             return;
         }
 

@@ -6,7 +6,10 @@ pub async fn init_schema(pool: &AnyPool) {
             id TEXT PRIMARY KEY,
             username TEXT NOT NULL UNIQUE,
             email TEXT UNIQUE,
-            password_hash TEXT NOT NULL,
+            -- Legacy column from local password auth; always '' for OIDC users.
+            password_hash TEXT NOT NULL DEFAULT '',
+            oidc_issuer TEXT,
+            oidc_subject TEXT,
             is_admin BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TEXT DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
         )",
@@ -159,14 +162,14 @@ pub async fn init_schema(pool: &AnyPool) {
             data BYTEA NOT NULL,
             UNIQUE(version_id, path)
         )",
-        "CREATE TABLE IF NOT EXISTS device_tokens (
+        "CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            name TEXT NOT NULL,
-            token_hash TEXT NOT NULL UNIQUE,
-            created_at TEXT NOT NULL,
-            last_used_at TEXT
+            idp_session_id TEXT,
+            id_token TEXT,
+            expires_at BIGINT NOT NULL
         )",
+        "CREATE INDEX IF NOT EXISTS sessions_idp_session ON sessions(idp_session_id)",
     ];
 
     for stmt in &statements {
@@ -178,6 +181,10 @@ pub async fn init_schema(pool: &AnyPool) {
 
     // Idempotent migrations for existing databases
     let migrations = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_issuer TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_subject TEXT",
+        "CREATE UNIQUE INDEX IF NOT EXISTS users_oidc_identity ON users(oidc_issuer, oidc_subject)",
+        "DROP TABLE IF EXISTS device_tokens",
         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS public_role TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TEXT DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')",

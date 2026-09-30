@@ -1,8 +1,8 @@
 <script lang="ts">
 	import '../app.css';
-	import { fetchUser } from '$lib/ts/auth';
+	import { fetchUser, redirectToLogin, userStore } from '$lib/ts/auth';
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { get } from 'svelte/store';
 	import { page } from '$app/stores';
 	import { themeStore, darkModeStore } from '$lib/ts/store';
 	import { themes } from '$lib/ts/themes';
@@ -10,19 +10,17 @@
 	let { children } = $props();
 	let loaded = $state(false);
 
+	// Pages that anonymous visitors may open: documents and spaces can be public,
+	// and those pages send the visitor to sign-in themselves when access is denied.
+	const PUBLIC_PREFIXES = ['/doc/', '/space/', '/api-docs'];
+
 	onMount(async () => {
-		const setupRes = await fetch('/api/setup');
-		if (setupRes.ok) {
-			const { needs_setup } = await setupRes.json();
-			if (needs_setup) {
-				if ($page.url.pathname !== '/setup') {
-					await goto('/setup');
-				}
-				loaded = true;
-				return;
-			}
-		}
 		await fetchUser();
+		const path = $page.url.pathname;
+		if (!get(userStore) && !PUBLIC_PREFIXES.some((p) => path.startsWith(p))) {
+			redirectToLogin();
+			return;
+		}
 		loaded = true;
 	});
 

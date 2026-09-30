@@ -4,14 +4,9 @@ use axum::{
     Json,
 };
 use axum_extra::extract::cookie::SignedCookieJar;
-use uuid::Uuid;
-use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
-    Argon2,
-};
 
 use crate::{
-    models::{AdminCreateUserRequest, AdminUserView, UpdateUserRequest},
+    models::{AdminUserView, UpdateUserRequest},
     AppState,
 };
 
@@ -28,46 +23,6 @@ async fn require_admin(state: &AppState, jar: &SignedCookieJar) -> Result<String
     match is_admin {
         Some((v,)) if v != 0 => Ok(user_id),
         _ => Err((StatusCode::FORBIDDEN, "Admin access required".to_string())),
-    }
-}
-
-pub async fn create_user(
-    State(state): State<AppState>,
-    jar: SignedCookieJar,
-    Json(payload): Json<AdminCreateUserRequest>,
-) -> Result<(StatusCode, Json<AdminUserView>), (StatusCode, String)> {
-    require_admin(&state, &jar).await?;
-
-    if payload.username.is_empty() || payload.email.is_empty() || payload.password.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Username, email, and password are required".to_string()));
-    }
-
-    let salt = SaltString::generate(&mut OsRng);
-    let password_hash = Argon2::default()
-        .hash_password(payload.password.as_bytes(), &salt)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .to_string();
-
-    let user_id = Uuid::new_v4().to_string();
-    let is_admin = payload.is_admin.unwrap_or(false);
-
-    let result = sqlx::query_as::<_, AdminUserView>(
-        "INSERT INTO users (id, username, email, password_hash, is_admin) VALUES (?, ?, ?, ?, ?) RETURNING id, username, email, is_admin, created_at"
-    )
-    .bind(&user_id)
-    .bind(&payload.username)
-    .bind(&payload.email)
-    .bind(&password_hash)
-    .bind(if is_admin { 1i64 } else { 0i64 })
-    .fetch_one(&state.db)
-    .await;
-
-    match result {
-        Ok(user) => Ok((StatusCode::CREATED, Json(user))),
-        Err(sqlx::Error::Database(err)) if err.is_unique_violation() => {
-            Err((StatusCode::CONFLICT, "Username or email already exists".to_string()))
-        }
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
 
@@ -96,6 +51,9 @@ pub async fn update_user(
     let requester_id = require_admin(&state, &jar).await?;
 
     if let Some(is_admin) = payload.is_admin {
+        if state.oidc.config.admin_role.is_some() {
+            return Err((StatusCode::CONFLICT, "Admin rights are managed by the identity provider (OIDC_ADMIN_ROLE)".to_string()));
+        }
         if !is_admin && requester_id == user_id {
             return Err((StatusCode::BAD_REQUEST, "Cannot remove your own admin privileges".to_string()));
         }

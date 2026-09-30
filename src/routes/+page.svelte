@@ -1,13 +1,13 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
-    import { userStore } from '$lib/ts/auth';
+    import { userStore, redirectToLogin } from '$lib/ts/auth';
 
     onMount(() => {
         if ($userStore) {
             goto('/dashboard');
         } else {
-            goto('/login');
+            redirectToLogin('/dashboard');
         }
     });
 </script>

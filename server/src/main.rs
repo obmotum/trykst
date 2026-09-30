@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, post, put, delete, patch},
+    routing::{get, post, delete, patch},
     Router,
 };
 use axum_extra::extract::cookie::Key;
@@ -17,15 +17,14 @@ mod api_keys;
 mod auth;
 mod compiler;
 mod db;
-mod desktop;
 mod docs;
 mod folders;
 mod files;
 mod handlers;
 mod models;
+mod oidc;
 mod packages;
 mod public_api;
-mod setup;
 mod spaces;
 mod world;
 mod collab;
@@ -41,7 +40,7 @@ pub struct AppState {
     pub bcast_map: Arc<Mutex<HashMap<String, Arc<BroadcastGroup>>>>,
     pub db: AnyPool,
     pub key: Key,
-    pub registration_enabled: bool,
+    pub oidc: Arc<oidc::Oidc>,
     pub rate_limiter: RateLimiterMap,
 }
 
@@ -82,34 +81,32 @@ async fn main() {
         }
     };
 
-    let registration_enabled = std::env::var("ALLOW_REGISTRATION")
-        .map(|v| v.to_lowercase() != "false")
-        .unwrap_or(true);
+    let oidc = Arc::new(oidc::Oidc::new(oidc::OidcConfig::from_env()));
+    oidc::spawn_session_cleanup(db.clone());
 
     let state = AppState {
         compiler: Arc::new(Mutex::new(TypstCompiler::new())),
         bcast_map: Arc::new(Mutex::new(HashMap::new())),
         db,
         key,
-        registration_enabled,
+        oidc,
         rate_limiter: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let api_routes = Router::new()
-        .route("/setup", get(setup::setup_status).post(setup::run_setup))
-        .route("/admin/users", get(admin::list_users).post(admin::create_user))
+        .route("/admin/users", get(admin::list_users))
         .route("/admin/users/{id}", patch(admin::update_user).delete(admin::delete_user))
         .route("/compile", post(compile_handler))
         .route("/export/{format}", post(export_handler))
         .route("/export/pandoc/{format}", post(handlers::pandoc_export_handler))
         .route("/import/pandoc", post(handlers::pandoc_import_handler))
         .route("/lsp/{id}", get(handlers::lsp_handler))
-        .route("/auth/register", post(auth::register))
-        .route("/auth/login", post(auth::login))
-        .route("/auth/logout", post(auth::logout))
-        .route("/auth/me", get(auth::me).put(auth::update_profile))
+        .route("/auth/oidc/login", get(oidc::login))
+        .route("/auth/oidc/callback", get(oidc::callback))
+        .route("/auth/oidc/backchannel-logout", post(oidc::backchannel_logout))
+        .route("/auth/logout", post(oidc::logout))
+        .route("/auth/me", get(auth::me))
         .route("/auth/storage", get(auth::storage_stats))
-        .route("/auth/change-password", put(auth::change_password))
         .route("/folders", get(folders::list_folders).post(folders::create_folder))
         .route("/folders/{id}", delete(folders::delete_folder).patch(folders::update_folder))
         .route("/fonts", get(files::list_fonts))
@@ -141,20 +138,6 @@ async fn main() {
         .route("/packages/publish", post(packages::publish_package))
         .route("/packages/{name}", get(packages::list_versions).delete(packages::delete_package));
 
-    let desktop_routes = Router::new()
-        .route("/auth/login", post(desktop::login))
-        .route("/auth/logout", post(desktop::logout))
-        .route("/auth/me", get(desktop::me))
-        .route("/spaces", get(desktop::list_spaces).post(desktop::create_space))
-        .route("/spaces/{id}", get(desktop::pull_space).delete(desktop::delete_space))
-        .route("/spaces/{id}/manifest", get(desktop::get_manifest))
-        .route("/folders", get(desktop::list_folders))
-        .route("/documents", get(desktop::list_documents))
-        .route("/documents/{id}", get(desktop::pull_document).put(desktop::push_document))
-        .route("/shared", get(desktop::list_shared))
-        .route("/files", get(desktop::list_account_files))
-        .route("/files/{id}", get(desktop::pull_account_file))
-        .route("/spaces/{id}/file", get(desktop::pull_file).put(desktop::push_file).delete(desktop::delete_file));
 
     let v1_routes = Router::new()
         .route("/render", post(public_api::render_handler));
@@ -162,12 +145,14 @@ async fn main() {
     let yjs_routes = Router::new()
         .route("/{id}", get(yjs_handler));
 
+    let session_guard = axum::middleware::from_fn_with_state(state.clone(), oidc::session_guard);
+
     let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "../build".to_string());
 
     let app = Router::new()
-        .nest("/api", api_routes.nest("/desktop", desktop_routes).layer(TraceLayer::new_for_http()))
+        .nest("/api", api_routes.layer(session_guard.clone()).layer(TraceLayer::new_for_http()))
         .nest("/v1", v1_routes.layer(TraceLayer::new_for_http()))
-        .nest("/yjs", yjs_routes.layer(TraceLayer::new_for_http()))
+        .nest("/yjs", yjs_routes.layer(session_guard).layer(TraceLayer::new_for_http()))
         .fallback_service(ServeDir::new(&static_dir).fallback(ServeFile::new(format!("{}/index.html", static_dir))))
         .with_state(state);
 

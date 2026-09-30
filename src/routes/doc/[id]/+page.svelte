@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { get } from 'svelte/store';
+	import { userStore, redirectToLogin } from '$lib/ts/auth';
 	import Editor from '$lib/components/Editor.svelte';
 	import Preview from '$lib/components/Preview.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
@@ -87,7 +89,10 @@
 
 		
 		fetch(`/api/docs/${docId}`)
-			.then(res => res.json())
+			.then(res => {
+				if (!res.ok && !get(userStore)) redirectToLogin();
+				return res.json();
+			})
 			.then(doc => {
 				if (doc && doc.title) {
 					documentTitle = doc.title;

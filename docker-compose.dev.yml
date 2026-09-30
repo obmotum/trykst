@@ -1,0 +1,32 @@
+# Local Keycloak for developing and testing the OIDC login.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# Realm "typstdrive" is imported on first start (dev/keycloak/typstdrive-realm.json):
+#   alice / alice   typstdrive-user + typstdrive-admin
+#   bob   / bob     typstdrive-user
+#   carol / carol   no TypstDrive role (rejected when OIDC_REQUIRED_ROLE is set)
+# Keycloak admin console: http://localhost:8080  (admin / admin)
+#
+# Then run the server on the host with:
+#   OIDC_ISSUER=http://localhost:8080/realms/typstdrive
+#   OIDC_CLIENT_ID=typstdrive
+#   OIDC_CLIENT_SECRET=typstdrive-dev-secret
+#   PUBLIC_URL=http://localhost:3000
+#   OIDC_ROLES_CLAIM=realm_access.roles
+#   OIDC_ADMIN_ROLE=typstdrive-admin
+#   OIDC_REQUIRED_ROLE=typstdrive-user
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      # Lets Keycloak reach the server on the host for back-channel logout (Linux Docker).
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./dev/keycloak:/opt/keycloak/data/import:ro

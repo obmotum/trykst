@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { get } from 'svelte/store';
+	import { userStore, redirectToLogin } from '$lib/ts/auth';
 	import { page } from '$app/stores';
 	import Editor from '$lib/components/Editor.svelte';
 	import Preview from '$lib/components/Preview.svelte';
@@ -168,7 +170,10 @@
 	onMount(() => {
 		setSpace(spaceId);
 		fetch(`/api/spaces/${spaceId}`)
-			.then((r) => r.json())
+			.then((r) => {
+				if (!r.ok && !get(userStore)) redirectToLogin();
+				return r.json();
+			})
 			.then((s) => {
 				if (s && s.name) spaceName = s.name;
 				if (s && s.entrypoint) entrypoint = s.entrypoint;
