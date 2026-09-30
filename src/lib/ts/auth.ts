@@ -5,6 +5,8 @@ export type User = {
     username: string;
     email: string | null;
     is_admin: boolean;
+    /** External user: only sees what was shared with them, cannot create content. */
+    is_guest: boolean;
 };
 
 export const userStore = writable<User | null>(null);

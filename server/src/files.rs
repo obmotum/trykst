@@ -61,6 +61,7 @@ pub async fn upload_file_global(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
+    crate::auth::require_member(&state, &user_id).await?;
 
     let mut uploaded_files = vec![];
     let mut font_families = vec![];

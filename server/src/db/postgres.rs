@@ -11,6 +11,7 @@ pub async fn init_schema(pool: &AnyPool) {
             oidc_issuer TEXT,
             oidc_subject TEXT,
             is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+            is_guest BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TEXT DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
         )",
         "CREATE TABLE IF NOT EXISTS folders (
@@ -181,6 +182,7 @@ pub async fn init_schema(pool: &AnyPool) {
 
     // Idempotent migrations for existing databases
     let migrations = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_guest BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_issuer TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_subject TEXT",
         "CREATE UNIQUE INDEX IF NOT EXISTS users_oidc_identity ON users(oidc_issuer, oidc_subject)",

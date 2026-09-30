@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
     import Icon from '@iconify/svelte';
+    import { userStore } from '$lib/ts/auth';
     
     let { onClose, docId = undefined } = $props<{ onClose: () => void, docId?: string }>();
 
@@ -14,6 +15,7 @@
         display_name: string | null;
         organization: string | null;
         picture: string | null;
+        is_guest: boolean;
     };
 
     let link = $state('');
@@ -200,7 +202,8 @@
         </div>
         
         <div class="p-6 space-y-6">
-            <div class="space-y-3">
+            {#if !$userStore?.is_guest}
+            <div class="space-y-3" data-invite>
                 <div class="text-sm font-semibold text-[var(--theme-text)]" style="color: var(--theme-text);">Invite Collaborator</div>
                 <div class="relative">
                 <form onsubmit={inviteUser} class="flex items-center gap-2 bg-gray-50 dark:bg-zinc-900/50 p-1.5 rounded-lg border border-gray-300 dark:border-zinc-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
@@ -258,7 +261,7 @@
                                             {personName(person)}{#if person.organization}<span class="text-gray-500 dark:text-gray-400">{` | ${person.organization}`}</span>{/if}
                                         </span>
                                         <span class="block text-xs text-gray-500 dark:text-gray-400 truncate">
-                                            {person.email ?? person.username}{#if !person.user_id}<span class="italic">{' · not signed in yet'}</span>{/if}
+                                            {person.email ?? person.username}{#if !person.user_id}<span class="italic">{' · not signed in yet'}</span>{/if}{#if person.is_guest}<span class="ml-1.5 px-1.5 py-px rounded bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 not-italic">Guest</span>{/if}
                                         </span>
                                     </span>
                                 </button>
@@ -282,6 +285,7 @@
                     </div>
                 {/if}
             </div>
+            {/if}
 
             {#if collabLoading}
                 <div class="flex items-center gap-2 text-sm text-gray-400 dark:text-gray-500 py-1">

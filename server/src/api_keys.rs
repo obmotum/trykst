@@ -54,6 +54,7 @@ pub async fn create_key(
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
     let user_id = get_user_id(&jar)
         .ok_or((StatusCode::UNAUTHORIZED, "Not authenticated".to_string()))?;
+    crate::auth::require_member(&state, &user_id).await?;
 
     if payload.name.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "Key name cannot be empty".to_string()));
@@ -174,6 +175,7 @@ pub async fn regenerate_key(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let user_id = get_user_id(&jar)
         .ok_or((StatusCode::UNAUTHORIZED, "Not authenticated".to_string()))?;
+    crate::auth::require_member(&state, &user_id).await?;
 
     let row: Option<(String,)> = sqlx::query_as(
         "SELECT name FROM api_keys WHERE id = ? AND user_id = ?"

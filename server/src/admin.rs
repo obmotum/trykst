@@ -33,7 +33,7 @@ pub async fn list_users(
     require_admin(&state, &jar).await?;
 
     let users = sqlx::query_as::<_, AdminUserView>(
-        "SELECT id, username, email, is_admin, created_at FROM users ORDER BY created_at ASC"
+        "SELECT id, username, email, is_admin, is_guest, created_at FROM users ORDER BY created_at ASC"
     )
     .fetch_all(&state.db)
     .await
@@ -54,6 +54,16 @@ pub async fn update_user(
         if state.oidc.config.admin_role.is_some() {
             return Err((StatusCode::CONFLICT, "Admin rights are managed by the identity provider (OIDC_ADMIN_ROLE)".to_string()));
         }
+        if is_admin {
+            let guest: Option<(i64,)> = sqlx::query_as("SELECT is_guest FROM users WHERE id = ?")
+                .bind(&user_id)
+                .fetch_optional(&state.db)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            if matches!(guest, Some((g,)) if g != 0) {
+                return Err((StatusCode::BAD_REQUEST, "Guests cannot be administrators".to_string()));
+            }
+        }
         if !is_admin && requester_id == user_id {
             return Err((StatusCode::BAD_REQUEST, "Cannot remove your own admin privileges".to_string()));
         }
@@ -66,7 +76,7 @@ pub async fn update_user(
     }
 
     let user = sqlx::query_as::<_, AdminUserView>(
-        "SELECT id, username, email, is_admin, created_at FROM users WHERE id = ?"
+        "SELECT id, username, email, is_admin, is_guest, created_at FROM users WHERE id = ?"
     )
     .bind(&user_id)
     .fetch_optional(&state.db)

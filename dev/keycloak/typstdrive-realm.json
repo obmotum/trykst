@@ -11,6 +11,10 @@
       {
         "name": "typstdrive-admin",
         "description": "TypstDrive administrator"
+      },
+      {
+        "name": "typstdrive-external",
+        "description": "External guest: only sees documents shared with them"
       }
     ]
   },
@@ -266,6 +270,30 @@
       "realmRoles": [
         "default-roles-typstdrive",
         "typstdrive-user"
+      ]
+    },
+    {
+      "username": "erik",
+      "email": "erik@partner.test",
+      "emailVerified": true,
+      "firstName": "Erik",
+      "lastName": "Extern",
+      "enabled": true,
+      "attributes": {
+        "organization": [
+          "Partner AG"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "erik",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-typstdrive",
+        "typstdrive-external"
       ]
     },
     {

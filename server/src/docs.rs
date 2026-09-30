@@ -77,6 +77,7 @@ pub async fn create_document(
 ) -> Result<Json<Document>, (StatusCode, String)> {
     let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
+    crate::auth::require_member(&state, &user_id).await?;
 
     let doc_id = Uuid::new_v4().to_string();
 

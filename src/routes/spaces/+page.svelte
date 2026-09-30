@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { userStore } from '$lib/ts/auth';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import Icon from '@iconify/svelte';
@@ -108,9 +109,11 @@
 				</h2>
 				<p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Multi-file Typst workspaces with their own <code class="font-mono text-xs">typst.toml</code>.</p>
 			</div>
+			{#if !$userStore?.is_guest}
 			<button onclick={() => { showCreate = true; newName = ''; }} class="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2">
 				<Icon icon="mdi:plus" class="text-lg" /> New Space
 			</button>
+			{/if}
 		</div>
 
 		{#if loading}

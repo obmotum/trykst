@@ -10,6 +10,21 @@ use crate::{
     AppState,
 };
 
+/// Rejects guests (external users). Guests may open, edit and comment on what was
+/// shared with them, but cannot create content, API keys or browse the directory.
+pub async fn require_member(state: &AppState, user_id: &str) -> Result<(), (StatusCode, String)> {
+    let row: Option<(i64,)> = sqlx::query_as("SELECT is_guest FROM users WHERE id = ?")
+        .bind(user_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    match row {
+        Some((0,)) => Ok(()),
+        Some(_) => Err((StatusCode::FORBIDDEN, "Guests can only work with documents shared with them".to_string())),
+        None => Err((StatusCode::UNAUTHORIZED, "User not found".to_string())),
+    }
+}
+
 pub async fn me(
     State(state): State<AppState>,
     jar: SignedCookieJar,
@@ -19,7 +34,7 @@ pub async fn me(
         None => return Err((StatusCode::UNAUTHORIZED, "Not logged in".to_string())),
     };
 
-    let user = sqlx::query_as::<_, User>("SELECT id, username, email, is_admin FROM users WHERE id = ?")
+    let user = sqlx::query_as::<_, User>("SELECT id, username, email, is_admin, is_guest FROM users WHERE id = ?")
         .bind(&user_id)
         .fetch_optional(&state.db)
         .await

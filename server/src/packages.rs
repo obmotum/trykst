@@ -44,6 +44,7 @@ pub async fn publish_package(
 ) -> Result<Json<Package>, (StatusCode, String)> {
     let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
+    crate::auth::require_member(&state, &user_id).await?;
 
     let space = sqlx::query_as::<_, Space>(
         "SELECT id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at FROM spaces WHERE id = ? AND owner_id = ?"

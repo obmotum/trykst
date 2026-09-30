@@ -37,6 +37,9 @@ services:
       # - OIDC_ADMIN_ROLE=typstdrive-admin
       # Only members of this role may sign in
       # - OIDC_REQUIRED_ROLE=typstdrive-user
+      # Members of this role are guests (external users): they only see what is shared
+      # with them and cannot create documents, spaces, packages or API keys
+      # - OIDC_GUEST_ROLE=typstdrive-external
       # Claim used as the stable user id (default: sub; Entra ID: oid)
       # - OIDC_SUBJECT_CLAIM=sub
       # - OIDC_USERNAME_CLAIM=preferred_username

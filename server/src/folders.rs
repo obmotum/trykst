@@ -54,6 +54,7 @@ pub async fn create_folder(
 ) -> Result<Json<Folder>, (StatusCode, String)> {
     let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
+    crate::auth::require_member(&state, &user_id).await?;
 
     let folder_id = Uuid::new_v4().to_string();
 

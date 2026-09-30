@@ -20,6 +20,7 @@ pub async fn invite_collaborator(
 ) -> Result<Json<Invitation>, (StatusCode, String)> {
     let inviter_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
+    crate::auth::require_member(&state, &inviter_id).await?;
 
     let doc_exists = sqlx::query_as::<_, (String,)>("SELECT id FROM documents WHERE id = ? AND owner_id = ?")
         .bind(&doc_id)

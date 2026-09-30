@@ -21,6 +21,9 @@ pub struct User {
     pub email: Option<String>,
     #[serde(with = "serde_i64_bool")]
     pub is_admin: i64,
+    /// External user: may only work with documents and spaces shared with them.
+    #[serde(with = "serde_i64_bool")]
+    pub is_guest: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -30,6 +33,8 @@ pub struct AdminUserView {
     pub email: Option<String>,
     #[serde(with = "serde_i64_bool")]
     pub is_admin: i64,
+    #[serde(with = "serde_i64_bool")]
+    pub is_guest: i64,
     pub created_at: String,
 }
 

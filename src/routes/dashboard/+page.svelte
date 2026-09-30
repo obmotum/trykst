@@ -22,6 +22,7 @@
     let folders = $state<any[]>([]);
     let files = $state<any[]>([]);
     let currentFolderId = $state<string | null>(null);
+    const isGuest = $derived(!!$userStore?.is_guest);
     let folderPath = $state<{id: string, name: string}[]>([]);
     let showCreateFolderModal = $state(false);
     let newFolderName = $state('');
@@ -281,6 +282,12 @@
             return;
         }
 
+        // Guests own nothing; start them where their shared documents are.
+        if ($userStore.is_guest) {
+            enterSharedDrive();
+            return;
+        }
+
         loadDocs();
     });
 
@@ -424,8 +431,9 @@
     
     <main class="max-w-7xl w-full mx-auto py-10 px-4 sm:px-6 lg:px-8 grow block">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">My Documents</h2>
+            <h2 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{isGuest ? 'Shared with me' : 'My Documents'}</h2>
             
+            {#if !isGuest}
             <div class="relative plus-dropdown-container">
                 <button onclick={() => showPlusDropdown = !showPlusDropdown} class="flex items-center justify-center text-[var(--theme-text)] bg-[var(--theme-border)] opacity-90 hover:opacity-100 w-10 h-10 rounded-full shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 border border-white/10 dark:border-black/20">
                     <Icon icon="mdi:plus" class="text-2xl" />
@@ -464,6 +472,7 @@
                 <input type="file" bind:this={fileInput} accept="image/*,font/*,.typ,.ttf,.otf" multiple onchange={handleFileUpload} class="hidden" />
                 <input type="file" bind:this={importFileInput} accept=".docx,.tex,.md,.html" onchange={handleImportUpload} class="hidden" />
             </div>
+            {/if}
         </div>
 
         
@@ -600,10 +609,12 @@
                     </div>
                     <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-1">No documents yet</h3>
                     <p class="text-gray-500 dark:text-gray-400 mb-6 text-sm">Create your first Typst document to get started.</p>
+                    {#if !isGuest}
                     <button onclick={openCreateModal} class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg shadow-sm text-sm font-medium transition-colors">
                         <Icon icon="mdi:plus" class="text-lg" />
                         Create Document
                     </button>
+                    {/if}
                 </div>
             {/if}
         {/if}

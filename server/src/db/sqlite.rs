@@ -16,6 +16,7 @@ pub async fn init_schema(pool: &AnyPool) {
             oidc_issuer TEXT,
             oidc_subject TEXT,
             is_admin INTEGER NOT NULL DEFAULT 0,
+            is_guest INTEGER NOT NULL DEFAULT 0,
             created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
         )",
         "CREATE TABLE IF NOT EXISTS folders (
@@ -186,6 +187,7 @@ pub async fn init_schema(pool: &AnyPool) {
 
     // Idempotent migrations for existing databases
     let migrations = [
+        "ALTER TABLE users ADD COLUMN is_guest INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN oidc_issuer TEXT",
         "ALTER TABLE users ADD COLUMN oidc_subject TEXT",
         "CREATE UNIQUE INDEX IF NOT EXISTS users_oidc_identity ON users(oidc_issuer, oidc_subject)",

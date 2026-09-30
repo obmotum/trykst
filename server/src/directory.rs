@@ -294,6 +294,8 @@ pub struct SearchResult {
     display_name: Option<String>,
     organization: Option<String>,
     picture: Option<String>,
+    /// Known guest (external user); only set for people who signed in before.
+    is_guest: bool,
 }
 
 /// People search for the share dialog: existing accounts plus the IdP directory.
@@ -306,6 +308,7 @@ pub async fn search(
         .get("session_user_id")
         .map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
+    crate::auth::require_member(&state, &me).await?;
 
     // One extra row (plus one for the caller, filtered out below) tells the client whether
     // "show more" makes sense: it displays `limit` rows and offers more when it got more.
@@ -316,8 +319,8 @@ pub async fn search(
     }
 
     let pattern = format!("%{}%", q.to_lowercase().replace('%', "").replace('_', ""));
-    let local: Vec<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT id, username, email, oidc_subject FROM users \
+    let local: Vec<(String, String, Option<String>, Option<String>, i64)> = sqlx::query_as(
+        "SELECT id, username, email, oidc_subject, is_guest FROM users \
          WHERE LOWER(username) LIKE ? OR LOWER(COALESCE(email, '')) LIKE ? \
          ORDER BY username LIMIT ?",
     )
@@ -330,7 +333,7 @@ pub async fn search(
 
     let mut results: Vec<SearchResult> = local
         .into_iter()
-        .map(|(id, username, email, subject)| SearchResult {
+        .map(|(id, username, email, subject, is_guest)| SearchResult {
             subject,
             user_id: Some(id),
             username,
@@ -338,6 +341,7 @@ pub async fn search(
             display_name: None,
             organization: None,
             picture: None,
+            is_guest: is_guest != 0,
         })
         .collect();
 
@@ -358,6 +362,7 @@ pub async fn search(
             display_name: person.display_name,
             organization: person.organization,
             picture: person.picture,
+            is_guest: false,
         });
     }
     // Nobody needs to invite themselves.

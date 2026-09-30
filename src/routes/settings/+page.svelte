@@ -13,6 +13,7 @@
         username: string;
         email: string;
         is_admin: boolean;
+        is_guest: boolean;
         created_at: string;
     };
 
@@ -305,7 +306,7 @@
         { id: 'account', label: 'Account', icon: 'mdi:account-outline' },
         { id: 'theme', label: 'Theme', icon: 'mdi:palette-outline' },
         { id: 'storage', label: 'Storage', icon: 'mdi:harddisk' },
-        { id: 'api-keys', label: 'API Keys', icon: 'mdi:key-outline' },
+        ...($userStore?.is_guest ? [] : [{ id: 'api-keys', label: 'API Keys', icon: 'mdi:key-outline' }]),
         ...($userStore?.is_admin ? [{ id: 'admin', label: 'Admin', icon: 'mdi:shield-crown-outline' }] : [])
     ]);
 </script>
@@ -371,6 +372,12 @@
                             <div>
                                 <p class="text-base font-bold text-gray-900 dark:text-white">{$userStore?.username}</p>
                                 <p class="text-sm text-gray-500 dark:text-gray-400">{$userStore?.email}</p>
+                                {#if $userStore?.is_guest}
+                                    <span class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 mt-1">
+                                        <Icon icon="mdi:account-arrow-right-outline" class="text-sm" />
+                                        Guest
+                                    </span>
+                                {/if}
                                 {#if $userStore?.is_admin}
                                     <span class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 mt-1">
                                         <Icon icon="mdi:shield-crown-outline" class="text-sm" />
@@ -680,6 +687,9 @@
                                         <div class="flex-1 min-w-0">
                                             <div class="flex items-center gap-2">
                                                 <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{user.username}</p>
+                                                {#if user.is_guest}
+                                                    <span class="text-xs font-bold px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 flex-shrink-0">Guest</span>
+                                                {/if}
                                                 {#if user.is_admin}
                                                     <span class="text-xs font-bold px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 flex-shrink-0">Admin</span>
                                                 {/if}

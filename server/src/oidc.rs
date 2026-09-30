@@ -74,8 +74,11 @@ pub struct OidcConfig {
     pub roles_claim: Option<String>,
     /// Members of this role are admins. When unset, admins are managed inside TypstDrive.
     pub admin_role: Option<String>,
-    /// When set, only members of this role may sign in.
+    /// When set, only members of this role (or of `guest_role`) may sign in.
     pub required_role: Option<String>,
+    /// Members of this role are guests (external users): they only see what is
+    /// shared with them and cannot create content. Member/admin roles take precedence.
+    pub guest_role: Option<String>,
     pub session_max_age_secs: i64,
 }
 
@@ -112,6 +115,7 @@ impl OidcConfig {
             roles_claim: optional("OIDC_ROLES_CLAIM"),
             admin_role: optional("OIDC_ADMIN_ROLE"),
             required_role: optional("OIDC_REQUIRED_ROLE"),
+            guest_role: optional("OIDC_GUEST_ROLE"),
             session_max_age_secs: session_hours * 3600,
         }
     }
@@ -448,11 +452,15 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
         None => Vec::new(),
     };
 
-    if let Some(required) = &config.required_role {
-        if !roles.iter().any(|r| r == required) {
-            return Err((StatusCode::FORBIDDEN, "You are not permitted to use TypstDrive".to_string()));
-        }
+    let has_role = |role: &Option<String>| role.as_ref().is_some_and(|r| roles.iter().any(|x| x == r));
+    let is_admin_by_role = has_role(&config.admin_role);
+    let is_member_by_role = has_role(&config.required_role);
+    let is_guest = has_role(&config.guest_role) && !is_admin_by_role && !is_member_by_role;
+
+    if config.required_role.is_some() && !is_member_by_role && !is_admin_by_role && !is_guest {
+        return Err((StatusCode::FORBIDDEN, "You are not permitted to use TypstDrive".to_string()));
     }
+    let admin_from_idp = config.admin_role.is_some().then_some(is_admin_by_role);
 
     // 1. Known identity.
     let existing: Option<(String,)> =
@@ -499,7 +507,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
                 .fetch_one(&state.db)
                 .await
                 .map_err(internal)?;
-            let is_admin = config.admin_role.is_none() && is_first.0 == 0;
+            let is_admin = config.admin_role.is_none() && is_first.0 == 0 && !is_guest;
             sqlx::query(
                 "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject) VALUES (?, ?, ?, '', ?, ?, ?)",
             )
@@ -519,7 +527,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
                 e => internal(e),
             })?;
             tracing::info!("Provisioned user {username} ({id}) for OIDC subject {subject}");
-            return finish_admin_sync(state, id, &roles).await;
+            return sync_roles(state, id, admin_from_idp, is_guest).await;
         }
     };
 
@@ -535,14 +543,23 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
         tracing::warn!("Could not sync profile for user {user_id}: {e}");
     }
 
-    finish_admin_sync(state, user_id, &roles).await
+    sync_roles(state, user_id, admin_from_idp, is_guest).await
 }
 
-async fn finish_admin_sync(state: &AppState, user_id: String, roles: &[String]) -> Result<String, ApiError> {
-    if let Some(admin_role) = &state.oidc.config.admin_role {
-        let is_admin = roles.iter().any(|r| r == admin_role);
+/// Applies the roles from the IdP on every login. `is_admin` is only touched when
+/// the IdP manages it (OIDC_ADMIN_ROLE); guests are never admins.
+async fn sync_roles(state: &AppState, user_id: String, is_admin: Option<bool>, is_guest: bool) -> Result<String, ApiError> {
+    let flag = |b: bool| if b { 1i64 } else { 0i64 };
+    sqlx::query("UPDATE users SET is_guest = ? WHERE id = ?")
+        .bind(flag(is_guest))
+        .bind(&user_id)
+        .execute(&state.db)
+        .await
+        .map_err(internal)?;
+    let is_admin = if is_guest { Some(false) } else { is_admin };
+    if let Some(is_admin) = is_admin {
         sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")
-            .bind(if is_admin { 1i64 } else { 0i64 })
+            .bind(flag(is_admin))
             .bind(&user_id)
             .execute(&state.db)
             .await
