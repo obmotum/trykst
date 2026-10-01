@@ -7,6 +7,8 @@
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-5-ff3e00?logo=svelte)](https://kit.svelte.dev/)
 [![OpenID Connect](https://img.shields.io/badge/OpenID_Connect-F78C40?logo=openid&logoColor=white)](https://openid.net/connect/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![CI](https://github.com/obmotum/trykst/actions/workflows/ci.yml/badge.svg)](https://github.com/obmotum/trykst/actions/workflows/ci.yml)
+[![Docker image](https://github.com/obmotum/trykst/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/obmotum/trykst/pkgs/container/trykst)
 
 Trykst is a self-hosted web editor for [Typst](https://typst.app/) documents, built for organizations and home labs that already run an identity provider. There are no local accounts and no login page: people are signed in through your OpenID Provider (Keycloak, Authentik, Entra ID, …), so with an active IdP session opening Trykst just works.
 
@@ -56,7 +58,15 @@ Then set the variables listed at the top of `docker-compose.dev.yml` and run the
 
 ## Self-hosting
 
-A Docker image packages the Rust backend and the SvelteKit frontend into one container. Build it from the repository:
+A Docker image packages the Rust backend and the SvelteKit frontend into one container. It is published to GitHub Container Registry:
+
+| Tag | Content |
+|---|---|
+| `ghcr.io/obmotum/trykst:latest` | Latest build of `main` |
+| `ghcr.io/obmotum/trykst:1.2.3`, `:1.2` | Releases (git tags `v1.2.3`) |
+| `ghcr.io/obmotum/trykst:sha-<commit>` | A specific commit |
+
+In `docker-compose.yml`, replace `build: .` with `image: ghcr.io/obmotum/trykst:latest`, or build the image yourself:
 
 ```bash
 docker compose up -d --build

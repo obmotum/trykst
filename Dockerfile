@@ -51,8 +51,9 @@ COPY --from=backend-builder /app/server/target/release/server /app/server
 # COOKIE_SECRET        64+ byte secret for signing session cookies.
 #                      If unset, a random key is generated on each start
 #                      and all sessions are invalidated on restart.
-# ALLOW_REGISTRATION   Set to "false" to disable public registration.
-#                      Admins can still create accounts via the admin panel.
+# OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, PUBLIC_URL
+#                      Required: sign-in is exclusively via OpenID Connect.
+#                      See README.md and docker-compose.yml for all OIDC_* options.
 # RUST_LOG             Log filter (default: server=debug,tower_http=debug)
 ENV PORT=3000
 ENV STATIC_DIR=/app/build

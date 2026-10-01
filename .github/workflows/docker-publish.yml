@@ -1,0 +1,89 @@
+name: Docker image
+
+# Builds the image on every push to main and on version tags, and publishes it to
+# GitHub Container Registry as ghcr.io/<owner>/<repo>:
+#   main        -> :main, :latest, :sha-<short>
+#   tag v1.2.3  -> :1.2.3, :1.2, :sha-<short>
+# Pull requests only build (no push) to catch Dockerfile breakage early.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker-publish.yml
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Target platforms, comma-separated (arm64 builds under QEMU and are slow)"
+        required: false
+        default: "linux/amd64"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  image:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image name and platforms
+        id: vars
+        run: |
+          # Registry paths must be lowercase.
+          echo "image=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "platforms=${{ github.event.inputs.platforms || 'linux/amd64' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        if: contains(steps.vars.outputs.platforms, 'arm')
+        uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.vars.outputs.image }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Trykst
+            org.opencontainers.image.description=Collaborative Typst editor with native OIDC and seamless SSO
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ steps.vars.outputs.platforms }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

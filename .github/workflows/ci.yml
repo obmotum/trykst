@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep in sync with the Dockerfile.
+  TYPST_COMMIT: 9dfd3a08500b7896045f907433cf7b4b02434fad
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Type check
+        run: bun run check
+
+      - name: Build
+        run: bun run build
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # typst/ is a gitlink without .gitmodules, so fetch the pinned commit directly.
+      - name: Fetch Typst compiler
+        run: |
+          git init -q typst
+          git -C typst fetch -q --depth 1 https://github.com/typst/typst.git "$TYPST_COMMIT"
+          git -C typst checkout -q FETCH_HEAD
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+
+      - name: Check
+        run: cargo check --manifest-path server/Cargo.toml
+
+      - name: Clippy
+        run: cargo clippy --manifest-path server/Cargo.toml -- -D warnings
+        # The inherited code base still has clippy findings; report without failing.
+        continue-on-error: true
