@@ -97,9 +97,6 @@ pub struct SpaceFile {
     pub space_id: String,
     pub path: String,
     pub kind: String,
-    #[serde(skip_serializing)]
-    #[sqlx(default)]
-    pub content: Option<Vec<u8>>,
     pub mime_type: String,
     pub created_at: String,
 }

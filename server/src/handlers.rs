@@ -58,10 +58,10 @@ pub struct CompileRequest {
     pub files: Option<std::collections::HashMap<String, String>>,
 }
 
-use crate::compiler::{DocumentStats, ProjectInput};
+use crate::compiler::{Diagnostics, DocumentStats, ProjectInput};
 
 fn map_diagnostics(
-    diags: Vec<(typst::diag::SourceDiagnostic, Option<std::ops::Range<usize>>)>,
+    diags: Diagnostics,
 ) -> Vec<Diagnostic> {
     diags
         .into_iter()
@@ -735,8 +735,8 @@ pub async fn lsp_handler(
                 }
 
                 for line in header.split("\r\n") {
-                    if line.starts_with("Content-Length: ") {
-                        if let Ok(len) = line["Content-Length: ".len()..].trim().parse::<usize>() {
+                    if let Some(value) = line.strip_prefix("Content-Length: ") {
+                        if let Ok(len) = value.trim().parse::<usize>() {
                             content_length = len;
                         }
                     }

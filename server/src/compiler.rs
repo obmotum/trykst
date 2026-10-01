@@ -2,6 +2,9 @@ use crate::world::MemoryWorld;
 use serde::Serialize;
 use std::collections::HashMap;
 use typst::diag::{SourceDiagnostic, Warned};
+
+/// Compiler errors with the byte range they refer to in the main source, if known.
+pub type Diagnostics = Vec<(SourceDiagnostic, Option<std::ops::Range<usize>>)>;
 use typst::layout::{Frame, FrameItem};
 use typst::utils::Scalar;
 use typst_html::{HtmlDocument, HtmlOptions};
@@ -86,7 +89,7 @@ impl TypstCompiler {
         input: ProjectInput,
     ) -> Result<
         (Vec<String>, String, DocumentStats),
-        Vec<(SourceDiagnostic, Option<std::ops::Range<usize>>)>,
+        Diagnostics,
     > {
         let world = input.into_world(false);
         match typst::compile::<PagedDocument>(&world) {
@@ -128,7 +131,7 @@ impl TypstCompiler {
     pub fn export_pdf(
         &self,
         input: ProjectInput,
-    ) -> Result<Vec<u8>, Vec<(SourceDiagnostic, Option<std::ops::Range<usize>>)>> {
+    ) -> Result<Vec<u8>, Diagnostics> {
         let world = input.into_world(false);
         match typst::compile::<PagedDocument>(&world) {
             Warned {
@@ -160,7 +163,7 @@ impl TypstCompiler {
     pub fn export_png(
         &self,
         input: ProjectInput,
-    ) -> Result<Vec<u8>, Vec<(SourceDiagnostic, Option<std::ops::Range<usize>>)>> {
+    ) -> Result<Vec<u8>, Diagnostics> {
         let world = input.into_world(false);
         match typst::compile::<PagedDocument>(&world) {
             Warned {
@@ -198,7 +201,7 @@ impl TypstCompiler {
     pub fn export_html(
         &self,
         input: ProjectInput,
-    ) -> Result<String, Vec<(SourceDiagnostic, Option<std::ops::Range<usize>>)>> {
+    ) -> Result<String, Diagnostics> {
         let world = input.into_world(true);
         let document = match typst::compile::<HtmlDocument>(&world) {
             Warned {

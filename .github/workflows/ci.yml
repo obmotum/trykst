@@ -55,5 +55,3 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --manifest-path server/Cargo.toml -- -D warnings
-        # The inherited code base still has clippy findings; report without failing.
-        continue-on-error: true

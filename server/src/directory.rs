@@ -55,7 +55,7 @@ pub struct DirectoryUser {
 
 pub enum Directory {
     None,
-    Keycloak(KeycloakDirectory),
+    Keycloak(Box<KeycloakDirectory>),
 }
 
 impl Directory {
@@ -63,10 +63,10 @@ impl Directory {
         let kind = std::env::var("OIDC_DIRECTORY").unwrap_or_default().to_lowercase();
         match kind.as_str() {
             "" | "none" => Directory::None,
-            "keycloak" => Directory::Keycloak(
+            "keycloak" => Directory::Keycloak(Box::new(
                 KeycloakDirectory::new(issuer)
                     .expect("OIDC_DIRECTORY=keycloak requires OIDC_ISSUER of the form https://host/realms/<realm>"),
-            ),
+            )),
             other => panic!("Unknown OIDC_DIRECTORY '{other}'. Expected 'none' or 'keycloak'."),
         }
     }
@@ -399,8 +399,10 @@ pub async fn search(
         return Ok(Json(Vec::new()));
     }
 
-    let pattern = format!("%{}%", q.to_lowercase().replace('%', "").replace('_', ""));
-    let local: Vec<(String, String, Option<String>, Option<String>, i64)> = sqlx::query_as(
+    let pattern = format!("%{}%", q.to_lowercase().replace(['%', '_'], ""));
+    // (id, username, email, oidc_subject, is_guest)
+    type LocalUser = (String, String, Option<String>, Option<String>, i64);
+    let local: Vec<LocalUser> = sqlx::query_as(
         "SELECT id, username, email, oidc_subject, is_guest FROM users \
          WHERE LOWER(username) LIKE ? OR LOWER(COALESCE(email, '')) LIKE ? \
          ORDER BY username LIMIT ?",
