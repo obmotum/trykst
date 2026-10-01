@@ -55,3 +55,95 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --manifest-path server/Cargo.toml -- -D warnings
+
+  e2e:
+    name: E2E (${{ matrix.db }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - db: postgres
+            database_url: postgres://postgres:postgres@localhost:5432/trykst
+          - db: sqlite
+            database_url: sqlite:///tmp/trykst-e2e.db?mode=rwc
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: trykst
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      # Same Keycloak and realm as docker-compose.dev.yml (service containers
+      # cannot take a command, so start it by hand).
+      - name: Start Keycloak
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -v "$PWD/dev/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.3 start-dev --import-realm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+          shared-key: e2e
+
+      - name: Build server
+        run: cargo build --manifest-path server/Cargo.toml
+
+      - name: Wait for Keycloak
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/realms/trykst/.well-known/openid-configuration > /dev/null && exit 0
+            sleep 3
+          done
+          docker logs keycloak | tail -50
+          exit 1
+
+      - name: Start server
+        env:
+          DATABASE_URL: ${{ matrix.database_url }}
+          DB_TYPE: ${{ matrix.db }}
+          STATIC_DIR: /tmp/no-frontend
+          COOKIE_SECRET: e2e-cookie-secret-e2e-cookie-secret-e2e-cookie-secret-e2e-cookie-secret
+          OIDC_ISSUER: http://localhost:8080/realms/trykst
+          OIDC_CLIENT_ID: trykst
+          OIDC_CLIENT_SECRET: trykst-dev-secret
+          PUBLIC_URL: http://localhost:3000
+          OIDC_ROLES_CLAIM: realm_access.roles
+          OIDC_ADMIN_ROLE: trykst-admin
+          OIDC_REQUIRED_ROLE: trykst-user
+          OIDC_GUEST_ROLE: trykst-external
+          OIDC_DIRECTORY: keycloak
+          OIDC_DIRECTORY_ORG_SOURCE: organizations
+          OIDC_SCOPES: openid profile email organization:*
+          OIDC_HOME_ORGANIZATIONS: example
+          RUST_LOG: server=info
+        run: |
+          nohup server/target/debug/server > /tmp/server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://localhost:3000/api/auth/me && exit 0
+            sleep 1
+          done
+          cat /tmp/server.log
+          exit 1
+
+      - name: End-to-end test
+        run: python3 tests/e2e.py
+
+      - name: Server log
+        if: always()
+        run: cat /tmp/server.log || true
