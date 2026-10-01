@@ -22,7 +22,7 @@ pub async fn invite_collaborator(
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
     crate::auth::require_member(&state, &inviter_id).await?;
 
-    let doc_exists = sqlx::query_as::<_, (String,)>("SELECT id FROM documents WHERE id = ? AND owner_id = ?")
+    let doc_exists = sqlx::query_as::<_, (String,)>("SELECT id FROM documents WHERE id = $1 AND owner_id = $2")
         .bind(&doc_id)
         .bind(&inviter_id)
         .fetch_optional(&state.db)
@@ -43,7 +43,7 @@ pub async fn invite_collaborator(
 
     let collab_id = Uuid::new_v4().to_string();
     let _collab = sqlx::query_as::<_, Collaborator>(
-        "INSERT INTO collaborators (id, document_id, user_id, role) VALUES (?, ?, ?, ?) ON CONFLICT (document_id, user_id) DO UPDATE SET role = excluded.role RETURNING id, document_id, user_id, role, created_at"
+        "INSERT INTO collaborators (id, document_id, user_id, role) VALUES ($1, $2, $3, $4) ON CONFLICT (document_id, user_id) DO UPDATE SET role = excluded.role RETURNING id, document_id, user_id, role, created_at"
     )
     .bind(&collab_id)
     .bind(&doc_id)
@@ -77,7 +77,7 @@ pub async fn accept_invite(
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
     let invitation = sqlx::query_as::<_, Invitation>(
-        "SELECT id, document_id, role, token, created_at, expires_at FROM invitations WHERE token = ?"
+        "SELECT id, document_id, role, token, created_at, expires_at FROM invitations WHERE token = $1"
     )
     .bind(&query.token)
     .fetch_optional(&state.db)
@@ -88,7 +88,7 @@ pub async fn accept_invite(
     let collab_id = Uuid::new_v4().to_string();
 
     let collab = sqlx::query_as::<_, Collaborator>(
-        "INSERT INTO collaborators (id, document_id, user_id, role) VALUES (?, ?, ?, ?) ON CONFLICT (document_id, user_id) DO UPDATE SET role = excluded.role RETURNING id, document_id, user_id, role, created_at"
+        "INSERT INTO collaborators (id, document_id, user_id, role) VALUES ($1, $2, $3, $4) ON CONFLICT (document_id, user_id) DO UPDATE SET role = excluded.role RETURNING id, document_id, user_id, role, created_at"
     )
     .bind(&collab_id)
     .bind(&invitation.document_id)
@@ -111,8 +111,8 @@ pub async fn list_collaborators(
 
     // Only owner or collaborators on the document can see the list
     let has_access = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM documents WHERE id = ? AND owner_id = ? \
-         UNION ALL SELECT COUNT(*) FROM collaborators WHERE document_id = ? AND user_id = ?"
+        "SELECT COUNT(*) FROM documents WHERE id = $1 AND owner_id = $2 \
+         UNION ALL SELECT COUNT(*) FROM collaborators WHERE document_id = $3 AND user_id = $4"
     )
     .bind(&doc_id).bind(&user_id).bind(&doc_id).bind(&user_id)
     .fetch_all(&state.db)
@@ -128,7 +128,7 @@ pub async fn list_collaborators(
         "SELECT c.id, c.user_id, u.username, u.email, c.role, c.created_at \
          FROM collaborators c \
          INNER JOIN users u ON u.id = c.user_id \
-         WHERE c.document_id = ? \
+         WHERE c.document_id = $1 \
          ORDER BY c.created_at ASC"
     )
     .bind(&doc_id)
@@ -149,7 +149,7 @@ pub async fn remove_collaborator(
 
     // Only the document owner can remove collaborators
     let is_owner = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM documents WHERE id = ? AND owner_id = ?"
+        "SELECT COUNT(*) FROM documents WHERE id = $1 AND owner_id = $2"
     )
     .bind(&doc_id)
     .bind(&user_id)
@@ -162,7 +162,7 @@ pub async fn remove_collaborator(
     }
 
     let result = sqlx::query(
-        "DELETE FROM collaborators WHERE id = ? AND document_id = ?"
+        "DELETE FROM collaborators WHERE id = $1 AND document_id = $2"
     )
     .bind(&collab_id)
     .bind(&doc_id)
@@ -181,7 +181,7 @@ pub async fn remove_collaborator(
 /// owner, then the collaborators table, then `documents.public_role`.
 /// Returns `None` when the document does not exist or the caller has no access.
 async fn document_role(state: &AppState, doc_id: &str, user_id: &str) -> Result<Option<String>, (StatusCode, String)> {
-    let doc = sqlx::query_as::<_, (String, Option<String>)>("SELECT owner_id, public_role FROM documents WHERE id = ?")
+    let doc = sqlx::query_as::<_, (String, Option<String>)>("SELECT owner_id, public_role FROM documents WHERE id = $1")
         .bind(doc_id)
         .fetch_optional(&state.db)
         .await
@@ -194,7 +194,7 @@ async fn document_role(state: &AppState, doc_id: &str, user_id: &str) -> Result<
         return Ok(Some("owner".to_string()));
     }
 
-    let collab_role = sqlx::query_scalar::<_, String>("SELECT role FROM collaborators WHERE document_id = ? AND user_id = ?")
+    let collab_role = sqlx::query_scalar::<_, String>("SELECT role FROM collaborators WHERE document_id = $1 AND user_id = $2")
         .bind(doc_id)
         .bind(user_id)
         .fetch_optional(&state.db)
@@ -215,13 +215,13 @@ fn can_write_comments(role: &str) -> bool {
     role == "owner" || role == "editor"
 }
 
-// resolved is BOOLEAN on Postgres and INTEGER on SQLite; the CAST makes both decode as i64.
+// resolved is a 0/1 integer on both databases; rows from older schemas may hold NULL.
 const COMMENT_COLUMNS: &str = "c.id, c.document_id, c.user_id, c.content, \
      COALESCE(CAST(c.resolved AS INTEGER), 0) AS resolved, c.created_at, u.username as author_name";
 
 async fn fetch_comment(state: &AppState, comment_id: &str) -> Result<Option<Comment>, (StatusCode, String)> {
     sqlx::query_as::<_, Comment>(&format!(
-        "SELECT {COMMENT_COLUMNS} FROM comments c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ?"
+        "SELECT {COMMENT_COLUMNS} FROM comments c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = $1"
     ))
     .bind(comment_id)
     .fetch_optional(&state.db)
@@ -245,7 +245,7 @@ pub async fn get_comments(
         "SELECT {COMMENT_COLUMNS} \
          FROM comments c \
          LEFT JOIN users u ON c.user_id = u.id \
-         WHERE c.document_id = ? \
+         WHERE c.document_id = $1 \
          ORDER BY c.created_at ASC"
     ))
     .bind(&doc_id)
@@ -273,7 +273,7 @@ pub async fn add_comment(
 
     let comment_id = Uuid::new_v4().to_string();
 
-    sqlx::query("INSERT INTO comments (id, document_id, user_id, content) VALUES (?, ?, ?, ?)")
+    sqlx::query("INSERT INTO comments (id, document_id, user_id, content) VALUES ($1, $2, $3, $4)")
         .bind(&comment_id)
         .bind(&doc_id)
         .bind(&user_id)
@@ -298,7 +298,7 @@ pub async fn create_version(
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
     let doc = sqlx::query_as::<_, crate::models::Document>(
-        "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = ?"
+        "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = $1"
     )
     .bind(&doc_id)
     .fetch_optional(&state.db)
@@ -307,7 +307,7 @@ pub async fn create_version(
     .ok_or((StatusCode::NOT_FOUND, "Document not found".to_string()))?;
 
     let is_owner = doc.owner_id == user_id;
-    let role = sqlx::query_scalar::<_, String>("SELECT role FROM collaborators WHERE document_id = ? AND user_id = ?")
+    let role = sqlx::query_scalar::<_, String>("SELECT role FROM collaborators WHERE document_id = $1 AND user_id = $2")
         .bind(&doc_id)
         .bind(&user_id)
         .fetch_optional(&state.db)
@@ -320,7 +320,7 @@ pub async fn create_version(
 
     let version_id = uuid::Uuid::new_v4().to_string();
 
-    sqlx::query("INSERT INTO document_versions (id, document_id, user_id, content) VALUES (?, ?, ?, ?)")
+    sqlx::query("INSERT INTO document_versions (id, document_id, user_id, content) VALUES ($1, $2, $3, $4)")
         .bind(&version_id)
         .bind(&doc_id)
         .bind(&user_id)
@@ -333,7 +333,7 @@ pub async fn create_version(
         "SELECT v.id, v.document_id, v.user_id, v.content, v.created_at, u.username as author_name \
          FROM document_versions v \
          LEFT JOIN users u ON v.user_id = u.id \
-         WHERE v.id = ?"
+         WHERE v.id = $1"
     )
     .bind(&version_id)
     .fetch_one(&state.db)
@@ -355,7 +355,7 @@ pub async fn get_versions(
         "SELECT v.id, v.document_id, v.user_id, v.content, v.created_at, u.username as author_name \
          FROM document_versions v \
          LEFT JOIN users u ON v.user_id = u.id \
-         WHERE v.document_id = ? \
+         WHERE v.document_id = $1 \
          ORDER BY v.created_at DESC"
     )
     .bind(&doc_id)
@@ -398,8 +398,7 @@ pub async fn update_comment(
         comment.resolved = r as i64;
     }
 
-    // `(? <> 0)` is a BOOLEAN on Postgres and 0/1 on SQLite.
-    sqlx::query("UPDATE comments SET content = ?, resolved = (? <> 0) WHERE id = ?")
+    sqlx::query("UPDATE comments SET content = $1, resolved = $2 WHERE id = $3")
         .bind(&comment.content)
         .bind(comment.resolved)
         .bind(&comment.id)
@@ -430,7 +429,7 @@ pub async fn delete_comment(
         return Err((StatusCode::FORBIDDEN, "Only the author or the document owner can delete a comment".to_string()));
     }
 
-    sqlx::query("DELETE FROM comments WHERE id = ?")
+    sqlx::query("DELETE FROM comments WHERE id = $1")
         .bind(&comment_id)
         .execute(&state.db)
         .await

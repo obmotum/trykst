@@ -379,7 +379,7 @@ pub async fn callback(
 
     let session_id = Uuid::new_v4().to_string();
     let expires_at = chrono::Utc::now().timestamp() + oidc.config.session_max_age_secs;
-    sqlx::query("INSERT INTO sessions (id, user_id, idp_session_id, id_token, expires_at) VALUES (?, ?, ?, ?, ?)")
+    sqlx::query("INSERT INTO sessions (id, user_id, idp_session_id, id_token, expires_at) VALUES ($1, $2, $3, $4, $5)")
         .bind(&session_id)
         .bind(&user_id)
         .bind(&idp_session_id)
@@ -505,7 +505,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
 
     // 1. Known identity.
     let existing: Option<(String,)> =
-        sqlx::query_as("SELECT id FROM users WHERE oidc_issuer = ? AND oidc_subject = ?")
+        sqlx::query_as("SELECT id FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2")
             .bind(&issuer)
             .bind(&subject)
             .fetch_optional(&state.db)
@@ -518,13 +518,13 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
         Some(row) => Some(row),
         None if email_verified && email.is_some() => {
             let linked: Option<(String,)> =
-                sqlx::query_as("SELECT id FROM users WHERE email = ? AND oidc_subject IS NULL")
+                sqlx::query_as("SELECT id FROM users WHERE email = $1 AND oidc_subject IS NULL")
                     .bind(&email)
                     .fetch_optional(&state.db)
                     .await
                     .map_err(internal)?;
             if let Some((id,)) = &linked {
-                sqlx::query("UPDATE users SET oidc_issuer = ?, oidc_subject = ? WHERE id = ?")
+                sqlx::query("UPDATE users SET oidc_issuer = $1, oidc_subject = $2 WHERE id = $3")
                     .bind(&issuer)
                     .bind(&subject)
                     .bind(id)
@@ -550,7 +550,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
                 .map_err(internal)?;
             let is_admin = config.admin_role.is_none() && is_first.0 == 0 && !is_guest;
             sqlx::query(
-                "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject) VALUES (?, ?, ?, '', ?, ?, ?)",
+                "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject) VALUES ($1, $2, $3, '', $4, $5, $6)",
             )
             .bind(&id)
             .bind(&username)
@@ -574,7 +574,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
 
     // Keep profile data in sync with the IdP on every login.
     let username = unique_username(state, &preferred_username, Some(&user_id)).await?;
-    let update = sqlx::query("UPDATE users SET username = ?, email = ? WHERE id = ?")
+    let update = sqlx::query("UPDATE users SET username = $1, email = $2 WHERE id = $3")
         .bind(&username)
         .bind(&email)
         .bind(&user_id)
@@ -591,7 +591,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
 /// the IdP manages it (OIDC_ADMIN_ROLE); guests are never admins.
 async fn sync_roles(state: &AppState, user_id: String, is_admin: Option<bool>, is_guest: bool) -> Result<String, ApiError> {
     let flag = |b: bool| if b { 1i64 } else { 0i64 };
-    sqlx::query("UPDATE users SET is_guest = ? WHERE id = ?")
+    sqlx::query("UPDATE users SET is_guest = $1 WHERE id = $2")
         .bind(flag(is_guest))
         .bind(&user_id)
         .execute(&state.db)
@@ -599,7 +599,7 @@ async fn sync_roles(state: &AppState, user_id: String, is_admin: Option<bool>, i
         .map_err(internal)?;
     let is_admin = if is_guest { Some(false) } else { is_admin };
     if let Some(is_admin) = is_admin {
-        sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")
+        sqlx::query("UPDATE users SET is_admin = $1 WHERE id = $2")
             .bind(flag(is_admin))
             .bind(&user_id)
             .execute(&state.db)
@@ -614,7 +614,7 @@ async fn unique_username(state: &AppState, wanted: &str, own_id: Option<&str>) -
     let base = if wanted.trim().is_empty() { "user" } else { wanted.trim() };
     for n in 1..1000 {
         let candidate = if n == 1 { base.to_string() } else { format!("{base}-{n}") };
-        let taken: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE username = ?")
+        let taken: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE username = $1")
             .bind(&candidate)
             .fetch_optional(&state.db)
             .await
@@ -642,7 +642,7 @@ pub async fn resolve_invitee(state: &AppState, subject: Option<&str>, email: Opt
 
     let person = if let Some(subject) = subject {
         let known: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM users WHERE oidc_issuer = ? AND oidc_subject = ?")
+            sqlx::query_as("SELECT id FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2")
                 .bind(issuer)
                 .bind(subject)
                 .fetch_optional(&state.db)
@@ -659,7 +659,7 @@ pub async fn resolve_invitee(state: &AppState, subject: Option<&str>, email: Opt
                 .ok_or((StatusCode::NOT_FOUND, "User not found in the directory".to_string()))?,
         )
     } else if let Some(email) = email {
-        let known: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE LOWER(email) = LOWER(?)")
+        let known: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE LOWER(email) = LOWER($1)")
             .bind(email)
             .fetch_optional(&state.db)
             .await
@@ -683,14 +683,14 @@ pub async fn resolve_invitee(state: &AppState, subject: Option<&str>, email: Opt
             // Someone may already hold this email without being linked yet.
             if let Some(mail) = &p.email {
                 let known: Option<(String,)> = sqlx::query_as(
-                    "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND oidc_subject IS NULL",
+                    "SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND oidc_subject IS NULL",
                 )
                 .bind(mail)
                 .fetch_optional(&state.db)
                 .await
                 .map_err(internal)?;
                 if let Some((id,)) = known {
-                    sqlx::query("UPDATE users SET oidc_issuer = ?, oidc_subject = ? WHERE id = ?")
+                    sqlx::query("UPDATE users SET oidc_issuer = $1, oidc_subject = $2 WHERE id = $3")
                         .bind(issuer)
                         .bind(&p.subject)
                         .bind(&id)
@@ -715,7 +715,7 @@ pub async fn resolve_invitee(state: &AppState, subject: Option<&str>, email: Opt
     let id = Uuid::new_v4().to_string();
     let username = unique_username(state, &username, None).await?;
     sqlx::query(
-        "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject) VALUES (?, ?, ?, '', 0, ?, ?)",
+        "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject) VALUES ($1, $2, $3, '', 0, $4, $5)",
     )
     .bind(&id)
     .bind(&username)
@@ -745,13 +745,13 @@ pub async fn logout(
 ) -> Result<(SignedCookieJar, Json<LogoutResponse>), ApiError> {
     let mut id_token = None;
     if let Some(session_id) = jar.get(SESSION_COOKIE).map(|c| c.value().to_string()) {
-        let row: Option<(Option<String>,)> = sqlx::query_as("SELECT id_token FROM sessions WHERE id = ?")
+        let row: Option<(Option<String>,)> = sqlx::query_as("SELECT id_token FROM sessions WHERE id = $1")
             .bind(&session_id)
             .fetch_optional(&state.db)
             .await
             .map_err(internal)?;
         id_token = row.and_then(|(t,)| t);
-        sqlx::query("DELETE FROM sessions WHERE id = ?")
+        sqlx::query("DELETE FROM sessions WHERE id = $1")
             .bind(&session_id)
             .execute(&state.db)
             .await
@@ -818,7 +818,7 @@ pub async fn backchannel_logout(
     }
 
     let deleted = if let Some(sid) = claim_str(&claims, "sid") {
-        sqlx::query("DELETE FROM sessions WHERE idp_session_id = ?")
+        sqlx::query("DELETE FROM sessions WHERE idp_session_id = $1")
             .bind(sid)
             .execute(&state.db)
             .await
@@ -826,7 +826,7 @@ pub async fn backchannel_logout(
             .rows_affected()
     } else if let (Some(iss), Some(sub)) = (claim_str(&claims, "iss"), claim_str(&claims, "sub")) {
         sqlx::query(
-            "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE oidc_issuer = ? AND oidc_subject = ?)",
+            "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2)",
         )
         .bind(iss)
         .bind(sub)
@@ -861,7 +861,7 @@ pub async fn session_guard(
     let valid = match jar.get(SESSION_COOKIE).map(|c| c.value().to_string()) {
         Some(session_id) => {
             let row: Result<Option<(String,)>, _> =
-                sqlx::query_as("SELECT user_id FROM sessions WHERE id = ? AND expires_at > ?")
+                sqlx::query_as("SELECT user_id FROM sessions WHERE id = $1 AND expires_at > $2")
                     .bind(&session_id)
                     .bind(chrono::Utc::now().timestamp())
                     .fetch_optional(&state.db)
@@ -907,7 +907,7 @@ pub fn spawn_session_cleanup(db: sqlx::AnyPool) {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
         loop {
             interval.tick().await;
-            let _ = sqlx::query("DELETE FROM sessions WHERE expires_at <= ?")
+            let _ = sqlx::query("DELETE FROM sessions WHERE expires_at <= $1")
                 .bind(chrono::Utc::now().timestamp())
                 .execute(&db)
                 .await;

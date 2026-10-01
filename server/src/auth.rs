@@ -13,7 +13,7 @@ use crate::{
 /// Rejects guests (external users). Guests may open, edit and comment on what was
 /// shared with them, but cannot create content, API keys or browse the directory.
 pub async fn require_member(state: &AppState, user_id: &str) -> Result<(), (StatusCode, String)> {
-    let row: Option<(i64,)> = sqlx::query_as("SELECT is_guest FROM users WHERE id = ?")
+    let row: Option<(i64,)> = sqlx::query_as("SELECT is_guest FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(&state.db)
         .await
@@ -34,7 +34,7 @@ pub async fn me(
         None => return Err((StatusCode::UNAUTHORIZED, "Not logged in".to_string())),
     };
 
-    let user = sqlx::query_as::<_, User>("SELECT id, username, email, is_admin, is_guest FROM users WHERE id = ?")
+    let user = sqlx::query_as::<_, User>("SELECT id, username, email, is_admin, is_guest FROM users WHERE id = $1")
         .bind(&user_id)
         .fetch_optional(&state.db)
         .await
@@ -55,7 +55,7 @@ pub async fn storage_stats(
 
     // LENGTH() returns byte count for both BYTEA (Postgres) and BLOB (SQLite)
     let docs_size: (i64,) = sqlx::query_as(
-        "SELECT COALESCE(SUM(LENGTH(content)), 0) FROM documents WHERE owner_id = ?"
+        "SELECT COALESCE(SUM(LENGTH(content)), 0) FROM documents WHERE owner_id = $1"
     )
     .bind(&user_id)
     .fetch_one(&state.db)
@@ -63,7 +63,7 @@ pub async fn storage_stats(
     .unwrap_or((0,));
 
     let files_size: (i64,) = sqlx::query_as(
-        "SELECT COALESCE(SUM(LENGTH(data)), 0) FROM files WHERE owner_id = ?"
+        "SELECT COALESCE(SUM(LENGTH(data)), 0) FROM files WHERE owner_id = $1"
     )
     .bind(&user_id)
     .fetch_one(&state.db)

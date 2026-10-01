@@ -107,7 +107,7 @@ pub async fn yjs_handler(
             if let Some((_space, role)) = crate::spaces::space_role(&state, space_id, &user_id_opt).await {
                 is_viewer = role == "viewer";
                 if let Ok(Some((content,))) = sqlx::query_as::<_, (Option<Vec<u8>>,)>(
-                    "SELECT content FROM space_files WHERE id = ? AND space_id = ?"
+                    "SELECT content FROM space_files WHERE id = $1 AND space_id = $2"
                 )
                 .bind(file_id)
                 .bind(space_id)
@@ -121,7 +121,7 @@ pub async fn yjs_handler(
         }
     } else {
         let doc_info = sqlx::query_as::<_, Document>(
-            "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = ?"
+            "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = $1"
         )
         .bind(&id)
         .fetch_optional(&state.db)
@@ -131,7 +131,7 @@ pub async fn yjs_handler(
             if let Some(uid) = &user_id_opt {
                 if &d.owner_id == uid {
                     is_viewer = false;
-                } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = ? AND user_id = ? AND role = 'editor'")
+                } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = $1 AND user_id = $2 AND role = 'editor'")
                     .bind(&id)
                     .bind(uid)
                     .fetch_optional(&state.db)
@@ -178,9 +178,9 @@ pub async fn yjs_handler(
                     let doc = save_awareness.read().await;
                     let content = doc.doc().transact().encode_state_as_update_v1(&yrs::StateVector::default());
                     let query = if table == "space_files" {
-                        "UPDATE space_files SET content = ? WHERE id = ?"
+                        "UPDATE space_files SET content = $1 WHERE id = $2"
                     } else {
-                        "UPDATE documents SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                        "UPDATE documents SET content = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2"
                     };
                     let _ = sqlx::query(query)
                         .bind(content)
@@ -250,7 +250,7 @@ pub async fn compile_handler(
         return match result {
             Ok((svgs, thumbnail, stats)) => {
                 if can_save {
-                    let _ = sqlx::query("UPDATE spaces SET thumbnail_svg = ? WHERE id = ?")
+                    let _ = sqlx::query("UPDATE spaces SET thumbnail_svg = $1 WHERE id = $2")
                         .bind(&thumbnail)
                         .bind(&space.id)
                         .execute(&state.db)
@@ -272,7 +272,7 @@ pub async fn compile_handler(
 
     if let Some(doc_id) = &payload.document_id {
         if let Ok(doc) = sqlx::query_as::<_, crate::models::Document>(
-            "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = ?"
+            "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = $1"
         )
         .bind(doc_id)
         .fetch_one(&state.db)
@@ -283,7 +283,7 @@ pub async fn compile_handler(
                 if &doc.owner_id == uid {
                     has_access = true;
                     can_save_thumbnail = true;
-                } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = ? AND user_id = ?")
+                } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = $1 AND user_id = $2")
                     .bind(doc_id)
                     .bind(uid)
                     .fetch_optional(&state.db)
@@ -302,7 +302,7 @@ pub async fn compile_handler(
             }
 
             if has_access {
-                if let Ok(files) = sqlx::query_as::<_, (String, Vec<u8>)>("SELECT name, data FROM files WHERE owner_id = ?")
+                if let Ok(files) = sqlx::query_as::<_, (String, Vec<u8>)>("SELECT name, data FROM files WHERE owner_id = $1")
                     .bind(&doc.owner_id)
                     .fetch_all(&state.db)
                     .await
@@ -313,7 +313,7 @@ pub async fn compile_handler(
                 }
                 // Also include files uploaded by collaborators specifically for this document
                 if let Ok(collab_files) = sqlx::query_as::<_, (String, Vec<u8>)>(
-                    "SELECT name, data FROM files WHERE document_id = ? AND owner_id != ?"
+                    "SELECT name, data FROM files WHERE document_id = $1 AND owner_id != $2"
                 )
                 .bind(doc_id)
                 .bind(&doc.owner_id)
@@ -333,7 +333,7 @@ pub async fn compile_handler(
         Ok((svgs, thumbnail, stats)) => {
             if let Some(doc_id) = &payload.document_id {
                 if can_save_thumbnail {
-                    let _ = sqlx::query("UPDATE documents SET thumbnail_svg = ? WHERE id = ?")
+                    let _ = sqlx::query("UPDATE documents SET thumbnail_svg = $1 WHERE id = $2")
                         .bind(&thumbnail)
                         .bind(doc_id)
                         .execute(&state.db)
@@ -377,7 +377,7 @@ pub async fn export_handler(
 
     if let Some(doc_id) = &payload.document_id {
         if let Ok(doc) = sqlx::query_as::<_, crate::models::Document>(
-            "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = ?"
+            "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = $1"
         )
         .bind(doc_id)
         .fetch_one(&state.db)
@@ -387,7 +387,7 @@ pub async fn export_handler(
             if let Some(uid) = &user_id_opt {
                 if &doc.owner_id == uid {
                     has_access = true;
-                } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = ? AND user_id = ?")
+                } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = $1 AND user_id = $2")
                     .bind(doc_id)
                     .bind(uid)
                     .fetch_optional(&state.db)
@@ -405,7 +405,7 @@ pub async fn export_handler(
             }
 
             if has_access {
-                if let Ok(files) = sqlx::query_as::<_, (String, Vec<u8>)>("SELECT name, data FROM files WHERE owner_id = ?")
+                if let Ok(files) = sqlx::query_as::<_, (String, Vec<u8>)>("SELECT name, data FROM files WHERE owner_id = $1")
                     .bind(&doc.owner_id)
                     .fetch_all(&state.db)
                     .await
@@ -415,7 +415,7 @@ pub async fn export_handler(
                     }
                 }
                 if let Ok(collab_files) = sqlx::query_as::<_, (String, Vec<u8>)>(
-                    "SELECT name, data FROM files WHERE document_id = ? AND owner_id != ?"
+                    "SELECT name, data FROM files WHERE document_id = $1 AND owner_id != $2"
                 )
                 .bind(doc_id)
                 .bind(&doc.owner_id)
@@ -622,7 +622,7 @@ pub async fn lsp_handler(
     let user_id_opt = jar.get("session_user_id").map(|c| c.value().to_string());
 
     let doc = match sqlx::query_as::<_, crate::models::Document>(
-        "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = ?"
+        "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = $1"
     )
     .bind(&id)
     .fetch_optional(&state.db)
@@ -636,7 +636,7 @@ pub async fn lsp_handler(
     if let Some(uid) = &user_id_opt {
         if &doc.owner_id == uid {
             has_access = true;
-        } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = ? AND user_id = ?")
+        } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = $1 AND user_id = $2")
             .bind(&id)
             .bind(uid)
             .fetch_optional(&state.db)
@@ -658,7 +658,7 @@ pub async fn lsp_handler(
     }
 
     let mut files_map = std::collections::HashMap::new();
-    if let Ok(files) = sqlx::query_as::<_, (String, Vec<u8>)>("SELECT name, data FROM files WHERE owner_id = ?")
+    if let Ok(files) = sqlx::query_as::<_, (String, Vec<u8>)>("SELECT name, data FROM files WHERE owner_id = $1")
         .bind(doc.owner_id)
         .fetch_all(&state.db)
         .await

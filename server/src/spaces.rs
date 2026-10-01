@@ -73,7 +73,7 @@ pub async fn space_role(
     user_id_opt: &Option<String>,
 ) -> Option<(Space, String)> {
     let space = sqlx::query_as::<_, Space>(
-        "SELECT id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at FROM spaces WHERE id = ?"
+        "SELECT id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at FROM spaces WHERE id = $1"
     )
     .bind(space_id)
     .fetch_optional(&state.db)
@@ -85,7 +85,7 @@ pub async fn space_role(
             return Some((space, "owner".to_string()));
         }
         if let Ok(Some((role,))) = sqlx::query_as::<_, (String,)>(
-            "SELECT role FROM space_collaborators WHERE space_id = ? AND user_id = ?",
+            "SELECT role FROM space_collaborators WHERE space_id = $1 AND user_id = $2",
         )
         .bind(space_id)
         .bind(uid)
@@ -136,7 +136,7 @@ pub async fn assemble_project(
     // Account-level uploaded files (fonts, images) come first as a base layer so
     // they are available inside spaces; space files below override them by name.
     if let Ok(account_files) = sqlx::query_as::<_, (String, Vec<u8>)>(
-        "SELECT name, data FROM files WHERE owner_id = ?",
+        "SELECT name, data FROM files WHERE owner_id = $1",
     )
     .bind(&space.owner_id)
     .fetch_all(&state.db)
@@ -148,7 +148,7 @@ pub async fn assemble_project(
     }
 
     let rows = sqlx::query_as::<_, (String, String, Option<Vec<u8>>)>(
-        "SELECT path, kind, content FROM space_files WHERE space_id = ?",
+        "SELECT path, kind, content FROM space_files WHERE space_id = $1",
     )
     .bind(&space.id)
     .fetch_all(&state.db)
@@ -191,7 +191,7 @@ pub async fn list_spaces(
 
     let spaces = if let Some(folder_id) = query.folder_id {
         sqlx::query_as::<_, Space>(
-            "SELECT id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at FROM spaces WHERE owner_id = ? AND folder_id = ? ORDER BY updated_at DESC"
+            "SELECT id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at FROM spaces WHERE owner_id = $1 AND folder_id = $2 ORDER BY updated_at DESC"
         )
         .bind(&user_id)
         .bind(&folder_id)
@@ -199,7 +199,7 @@ pub async fn list_spaces(
         .await
     } else {
         sqlx::query_as::<_, Space>(
-            "SELECT id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at FROM spaces WHERE owner_id = ? AND folder_id IS NULL ORDER BY updated_at DESC"
+            "SELECT id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at FROM spaces WHERE owner_id = $1 AND folder_id IS NULL ORDER BY updated_at DESC"
         )
         .bind(&user_id)
         .fetch_all(&state.db)
@@ -221,7 +221,7 @@ pub async fn list_shared_spaces(
         "SELECT s.id, s.owner_id, s.folder_id, s.name, s.entrypoint, s.thumbnail_svg, \
          s.public_role, s.created_at, s.updated_at, c.role as effective_role \
          FROM spaces s \
-         INNER JOIN space_collaborators c ON c.space_id = s.id AND c.user_id = ? \
+         INNER JOIN space_collaborators c ON c.space_id = s.id AND c.user_id = $1 \
          ORDER BY s.updated_at DESC"
     )
     .bind(&user_id)
@@ -244,7 +244,7 @@ pub async fn create_space(
     let space_id = Uuid::new_v4().to_string();
 
     let space = sqlx::query_as::<_, Space>(
-        "INSERT INTO spaces (id, owner_id, folder_id, name, entrypoint) VALUES (?, ?, ?, ?, 'main.typ') RETURNING id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at"
+        "INSERT INTO spaces (id, owner_id, folder_id, name, entrypoint) VALUES ($1, $2, $3, $4, 'main.typ') RETURNING id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at"
     )
     .bind(&space_id)
     .bind(&user_id)
@@ -260,7 +260,7 @@ pub async fn create_space(
     ];
     for (path, content) in seeds {
         let _ = sqlx::query(
-            "INSERT INTO space_files (id, space_id, path, kind, content, mime_type) VALUES (?, ?, ?, 'text', ?, 'text/plain')"
+            "INSERT INTO space_files (id, space_id, path, kind, content, mime_type) VALUES ($1, $2, $3, 'text', $4, 'text/plain')"
         )
         .bind(Uuid::new_v4().to_string())
         .bind(&space_id)
@@ -298,7 +298,7 @@ pub async fn update_space(
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
     let mut space = sqlx::query_as::<_, Space>(
-        "SELECT id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at FROM spaces WHERE id = ? AND owner_id = ?"
+        "SELECT id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at FROM spaces WHERE id = $1 AND owner_id = $2"
     )
     .bind(&id)
     .bind(&user_id)
@@ -325,7 +325,7 @@ pub async fn update_space(
     }
 
     let space = sqlx::query_as::<_, Space>(
-        "UPDATE spaces SET name = ?, entrypoint = ?, folder_id = ?, public_role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_id = ? RETURNING id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at"
+        "UPDATE spaces SET name = $1, entrypoint = $2, folder_id = $3, public_role = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5 AND owner_id = $6 RETURNING id, owner_id, folder_id, name, entrypoint, thumbnail_svg, public_role, created_at, updated_at"
     )
     .bind(&space.name)
     .bind(&space.entrypoint)
@@ -348,12 +348,12 @@ pub async fn delete_space(
     let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
-    let _ = sqlx::query("DELETE FROM space_files WHERE space_id = ?")
+    let _ = sqlx::query("DELETE FROM space_files WHERE space_id = $1")
         .bind(&id)
         .execute(&state.db)
         .await;
 
-    let result = sqlx::query("DELETE FROM spaces WHERE id = ? AND owner_id = ?")
+    let result = sqlx::query("DELETE FROM spaces WHERE id = $1 AND owner_id = $2")
         .bind(&id)
         .bind(&user_id)
         .execute(&state.db)
@@ -378,7 +378,7 @@ pub async fn list_space_files(
         .ok_or((StatusCode::UNAUTHORIZED, "Unauthorized".to_string()))?;
 
     let files = sqlx::query_as::<_, SpaceFile>(
-        "SELECT id, space_id, path, kind, mime_type, created_at FROM space_files WHERE space_id = ? ORDER BY path ASC"
+        "SELECT id, space_id, path, kind, mime_type, created_at FROM space_files WHERE space_id = $1 ORDER BY path ASC"
     )
     .bind(&id)
     .fetch_all(&state.db)
@@ -407,7 +407,7 @@ pub async fn create_space_file(
     let file_id = Uuid::new_v4().to_string();
 
     let file = sqlx::query_as::<_, SpaceFile>(
-        "INSERT INTO space_files (id, space_id, path, kind, content, mime_type) VALUES (?, ?, ?, ?, ?, 'text/plain') RETURNING id, space_id, path, kind, mime_type, created_at"
+        "INSERT INTO space_files (id, space_id, path, kind, content, mime_type) VALUES ($1, $2, $3, $4, $5, 'text/plain') RETURNING id, space_id, path, kind, mime_type, created_at"
     )
     .bind(&file_id)
     .bind(&id)
@@ -450,7 +450,7 @@ pub async fn upload_space_file(
         };
 
         let _ = sqlx::query(
-            "INSERT INTO space_files (id, space_id, path, kind, content, mime_type) VALUES (?, ?, ?, ?, ?, ?) \
+            "INSERT INTO space_files (id, space_id, path, kind, content, mime_type) VALUES ($1, $2, $3, $4, $5, $6) \
              ON CONFLICT (space_id, path) DO UPDATE SET content = excluded.content, kind = excluded.kind, mime_type = excluded.mime_type"
         )
         .bind(Uuid::new_v4().to_string())
@@ -480,7 +480,7 @@ pub async fn get_space_file(
         .ok_or((StatusCode::UNAUTHORIZED, "Unauthorized".to_string()))?;
 
     let file = sqlx::query_as::<_, (String, String, Option<Vec<u8>>)>(
-        "SELECT kind, mime_type, content FROM space_files WHERE id = ? AND space_id = ?"
+        "SELECT kind, mime_type, content FROM space_files WHERE id = $1 AND space_id = $2"
     )
     .bind(&file_id)
     .bind(&id)
@@ -513,7 +513,7 @@ pub async fn update_space_file(
         return Err((StatusCode::FORBIDDEN, "Read-only access".to_string()));
     }
 
-    let result = sqlx::query("UPDATE space_files SET path = ? WHERE id = ? AND space_id = ?")
+    let result = sqlx::query("UPDATE space_files SET path = $1 WHERE id = $2 AND space_id = $3")
         .bind(&payload.path)
         .bind(&file_id)
         .bind(&id)
@@ -541,7 +541,7 @@ pub async fn delete_space_file(
         return Err((StatusCode::FORBIDDEN, "Read-only access".to_string()));
     }
 
-    let result = sqlx::query("DELETE FROM space_files WHERE id = ? AND space_id = ?")
+    let result = sqlx::query("DELETE FROM space_files WHERE id = $1 AND space_id = $2")
         .bind(&file_id)
         .bind(&id)
         .execute(&state.db)

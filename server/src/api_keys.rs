@@ -37,7 +37,7 @@ pub async fn list_keys(
         .ok_or((StatusCode::UNAUTHORIZED, "Not authenticated".to_string()))?;
 
     let keys = sqlx::query_as::<_, ApiKeyView>(
-        "SELECT id, name, key_prefix, created_at, last_used_at, rate_limit FROM api_keys WHERE user_id = ? ORDER BY created_at DESC"
+        "SELECT id, name, key_prefix, created_at, last_used_at, rate_limit FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC"
     )
     .bind(&user_id)
     .fetch_all(&state.db)
@@ -60,7 +60,7 @@ pub async fn create_key(
         return Err((StatusCode::BAD_REQUEST, "Key name cannot be empty".to_string()));
     }
 
-    let existing: Option<(i64,)> = sqlx::query_as("SELECT COUNT(*) FROM api_keys WHERE user_id = ?")
+    let existing: Option<(i64,)> = sqlx::query_as("SELECT COUNT(*) FROM api_keys WHERE user_id = $1")
         .bind(&user_id)
         .fetch_optional(&state.db)
         .await
@@ -79,7 +79,7 @@ pub async fn create_key(
     let now = chrono::Utc::now().to_rfc3339();
 
     sqlx::query(
-        "INSERT INTO api_keys (id, user_id, name, key_hash, key_prefix, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT INTO api_keys (id, user_id, name, key_hash, key_prefix, created_at) VALUES ($1, $2, $3, $4, $5, $6)"
     )
     .bind(&id)
     .bind(&user_id)
@@ -119,7 +119,7 @@ pub async fn get_aggregate_usage(
             sqlx::query_as::<_, UsagePoint>(
                 "SELECT minute as date, SUM(count) as count
                  FROM api_key_usage_detail
-                 WHERE key_id IN (SELECT id FROM api_keys WHERE user_id = ?) AND minute >= ?
+                 WHERE key_id IN (SELECT id FROM api_keys WHERE user_id = $1) AND minute >= $2
                  GROUP BY minute
                  ORDER BY minute ASC"
             )
@@ -136,7 +136,7 @@ pub async fn get_aggregate_usage(
             sqlx::query_as::<_, UsagePoint>(
                 "SELECT SUBSTR(minute, 1, 13) as date, SUM(count) as count
                  FROM api_key_usage_detail
-                 WHERE key_id IN (SELECT id FROM api_keys WHERE user_id = ?) AND minute >= ?
+                 WHERE key_id IN (SELECT id FROM api_keys WHERE user_id = $1) AND minute >= $2
                  GROUP BY SUBSTR(minute, 1, 13)
                  ORDER BY date ASC"
             )
@@ -153,7 +153,7 @@ pub async fn get_aggregate_usage(
             sqlx::query_as::<_, UsagePoint>(
                 "SELECT date, SUM(count) as count
                  FROM api_key_usage
-                 WHERE key_id IN (SELECT id FROM api_keys WHERE user_id = ?) AND date >= ?
+                 WHERE key_id IN (SELECT id FROM api_keys WHERE user_id = $1) AND date >= $2
                  GROUP BY date
                  ORDER BY date ASC"
             )
@@ -178,7 +178,7 @@ pub async fn regenerate_key(
     crate::auth::require_member(&state, &user_id).await?;
 
     let row: Option<(String,)> = sqlx::query_as(
-        "SELECT name FROM api_keys WHERE id = ? AND user_id = ?"
+        "SELECT name FROM api_keys WHERE id = $1 AND user_id = $2"
     )
     .bind(&key_id)
     .bind(&user_id)
@@ -194,7 +194,7 @@ pub async fn regenerate_key(
     let now = chrono::Utc::now().to_rfc3339();
 
     sqlx::query(
-        "UPDATE api_keys SET key_hash = ?, key_prefix = ?, created_at = ?, last_used_at = NULL WHERE id = ? AND user_id = ?"
+        "UPDATE api_keys SET key_hash = $1, key_prefix = $2, created_at = $3, last_used_at = NULL WHERE id = $4 AND user_id = $5"
     )
     .bind(&new_hash)
     .bind(&new_prefix)
@@ -223,7 +223,7 @@ pub async fn delete_key(
     let user_id = get_user_id(&jar)
         .ok_or((StatusCode::UNAUTHORIZED, "Not authenticated".to_string()))?;
 
-    let result = sqlx::query("DELETE FROM api_keys WHERE id = ? AND user_id = ?")
+    let result = sqlx::query("DELETE FROM api_keys WHERE id = $1 AND user_id = $2")
         .bind(&key_id)
         .bind(&user_id)
         .execute(&state.db)

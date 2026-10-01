@@ -14,7 +14,7 @@ async fn require_admin(state: &AppState, jar: &SignedCookieJar) -> Result<String
     let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
-    let is_admin: Option<(i64,)> = sqlx::query_as("SELECT is_admin FROM users WHERE id = ?")
+    let is_admin: Option<(i64,)> = sqlx::query_as("SELECT is_admin FROM users WHERE id = $1")
         .bind(&user_id)
         .fetch_optional(&state.db)
         .await
@@ -55,7 +55,7 @@ pub async fn update_user(
             return Err((StatusCode::CONFLICT, "Admin rights are managed by the identity provider (OIDC_ADMIN_ROLE)".to_string()));
         }
         if is_admin {
-            let guest: Option<(i64,)> = sqlx::query_as("SELECT is_guest FROM users WHERE id = ?")
+            let guest: Option<(i64,)> = sqlx::query_as("SELECT is_guest FROM users WHERE id = $1")
                 .bind(&user_id)
                 .fetch_optional(&state.db)
                 .await
@@ -67,7 +67,7 @@ pub async fn update_user(
         if !is_admin && requester_id == user_id {
             return Err((StatusCode::BAD_REQUEST, "Cannot remove your own admin privileges".to_string()));
         }
-        sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")
+        sqlx::query("UPDATE users SET is_admin = $1 WHERE id = $2")
             .bind(if is_admin { 1i64 } else { 0i64 })
             .bind(&user_id)
             .execute(&state.db)
@@ -76,7 +76,7 @@ pub async fn update_user(
     }
 
     let user = sqlx::query_as::<_, AdminUserView>(
-        "SELECT id, username, email, is_admin, is_guest, created_at FROM users WHERE id = ?"
+        "SELECT id, username, email, is_admin, is_guest, created_at FROM users WHERE id = $1"
     )
     .bind(&user_id)
     .fetch_optional(&state.db)
@@ -98,7 +98,7 @@ pub async fn delete_user(
         return Err((StatusCode::BAD_REQUEST, "Cannot delete your own account via admin panel".to_string()));
     }
 
-    sqlx::query("DELETE FROM users WHERE id = ?")
+    sqlx::query("DELETE FROM users WHERE id = $1")
         .bind(&user_id)
         .execute(&state.db)
         .await

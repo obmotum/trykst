@@ -404,8 +404,8 @@ pub async fn search(
     type LocalUser = (String, String, Option<String>, Option<String>, i64);
     let local: Vec<LocalUser> = sqlx::query_as(
         "SELECT id, username, email, oidc_subject, is_guest FROM users \
-         WHERE LOWER(username) LIKE ? OR LOWER(COALESCE(email, '')) LIKE ? \
-         ORDER BY username LIMIT ?",
+         WHERE LOWER(username) LIKE $1 OR LOWER(COALESCE(email, '')) LIKE $2 \
+         ORDER BY username LIMIT $3",
     )
     .bind(&pattern)
     .bind(&pattern)
@@ -449,7 +449,7 @@ pub async fn search(
         });
     }
     // Nobody needs to invite themselves.
-    let my_subject: Option<String> = sqlx::query_as::<_, (Option<String>,)>("SELECT oidc_subject FROM users WHERE id = ?")
+    let my_subject: Option<String> = sqlx::query_as::<_, (Option<String>,)>("SELECT oidc_subject FROM users WHERE id = $1")
         .bind(&me)
         .fetch_optional(&state.db)
         .await

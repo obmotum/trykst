@@ -10,8 +10,9 @@ pub async fn init_schema(pool: &AnyPool) {
             password_hash TEXT NOT NULL DEFAULT '',
             oidc_issuer TEXT,
             oidc_subject TEXT,
-            is_admin BOOLEAN NOT NULL DEFAULT FALSE,
-            is_guest BOOLEAN NOT NULL DEFAULT FALSE,
+            -- Flags are 0/1 integers like on SQLite; sqlx::Any cannot map BOOLEAN to i64.
+            is_admin BIGINT NOT NULL DEFAULT 0,
+            is_guest BIGINT NOT NULL DEFAULT 0,
             created_at TEXT DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
         )",
         "CREATE TABLE IF NOT EXISTS folders (
@@ -63,7 +64,7 @@ pub async fn init_schema(pool: &AnyPool) {
             document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
             user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             content TEXT NOT NULL,
-            resolved BOOLEAN DEFAULT FALSE,
+            resolved BIGINT DEFAULT 0,
             created_at TEXT DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
         )",
         "CREATE TABLE IF NOT EXISTS document_history (
@@ -183,15 +184,26 @@ pub async fn init_schema(pool: &AnyPool) {
     // Idempotent migrations for existing databases
     let migrations = [
         "UPDATE packages SET namespace = 'trykst' WHERE namespace = 'typstdrive'",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_guest BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_guest BIGINT NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_issuer TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_subject TEXT",
         "CREATE UNIQUE INDEX IF NOT EXISTS users_oidc_identity ON users(oidc_issuer, oidc_subject)",
         "DROP TABLE IF EXISTS device_tokens",
         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS public_role TEXT",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BIGINT NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TEXT DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')",
         "ALTER TABLE space_files ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')",
+        // Databases created by TypstDrive used BOOLEAN flags; convert them to 0/1.
+        // `::int` works for both BOOLEAN and BIGINT, so this is idempotent.
+        "ALTER TABLE users ALTER COLUMN is_admin DROP DEFAULT",
+        "ALTER TABLE users ALTER COLUMN is_admin TYPE BIGINT USING is_admin::int",
+        "ALTER TABLE users ALTER COLUMN is_admin SET DEFAULT 0",
+        "ALTER TABLE users ALTER COLUMN is_guest DROP DEFAULT",
+        "ALTER TABLE users ALTER COLUMN is_guest TYPE BIGINT USING is_guest::int",
+        "ALTER TABLE users ALTER COLUMN is_guest SET DEFAULT 0",
+        "ALTER TABLE comments ALTER COLUMN resolved DROP DEFAULT",
+        "ALTER TABLE comments ALTER COLUMN resolved TYPE BIGINT USING resolved::int",
+        "ALTER TABLE comments ALTER COLUMN resolved SET DEFAULT 0",
     ];
     for stmt in &migrations {
         sqlx::query(stmt).execute(pool).await.unwrap_or_else(|_| Default::default());

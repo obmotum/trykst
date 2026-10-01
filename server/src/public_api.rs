@@ -100,7 +100,7 @@ pub async fn render_handler(
     let key_hash = hash_key(&api_key);
 
     let key_row = sqlx::query_as::<_, (String, String, i64)>(
-        "SELECT id, user_id, rate_limit FROM api_keys WHERE key_hash = ?"
+        "SELECT id, user_id, rate_limit FROM api_keys WHERE key_hash = $1"
     )
     .bind(&key_hash)
     .fetch_optional(&state.db)
@@ -135,14 +135,14 @@ pub async fn render_handler(
     let now_str = now.to_rfc3339();
     let today = now.format("%Y-%m-%d").to_string();
 
-    let _ = sqlx::query("UPDATE api_keys SET last_used_at = ? WHERE id = ?")
+    let _ = sqlx::query("UPDATE api_keys SET last_used_at = $1 WHERE id = $2")
         .bind(&now_str)
         .bind(&key_id)
         .execute(&state.db)
         .await;
 
     let _ = sqlx::query(
-        "INSERT INTO api_key_usage (key_id, date, count) VALUES (?, ?, 1) \
+        "INSERT INTO api_key_usage (key_id, date, count) VALUES ($1, $2, 1) \
          ON CONFLICT (key_id, date) DO UPDATE SET count = api_key_usage.count + 1"
     )
     .bind(&key_id)
@@ -152,7 +152,7 @@ pub async fn render_handler(
 
     let minute_str = now.format("%Y-%m-%d %H:%M").to_string();
     let _ = sqlx::query(
-        "INSERT INTO api_key_usage_detail (key_id, minute, count) VALUES (?, ?, 1) \
+        "INSERT INTO api_key_usage_detail (key_id, minute, count) VALUES ($1, $2, 1) \
          ON CONFLICT (key_id, minute) DO UPDATE SET count = api_key_usage_detail.count + 1"
     )
     .bind(&key_id)
@@ -163,7 +163,7 @@ pub async fn render_handler(
     let cutoff_minute = (chrono::Utc::now() - chrono::TimeDelta::hours(25))
         .format("%Y-%m-%d %H:%M")
         .to_string();
-    let _ = sqlx::query("DELETE FROM api_key_usage_detail WHERE minute < ?")
+    let _ = sqlx::query("DELETE FROM api_key_usage_detail WHERE minute < $1")
         .bind(&cutoff_minute)
         .execute(&state.db)
         .await;
@@ -177,7 +177,7 @@ pub async fn render_handler(
     };
 
     if let Ok(Some((data, created_at))) = sqlx::query_as::<_, (Vec<u8>, String)>(
-        "SELECT data, created_at FROM api_render_cache WHERE content_hash = ? AND format = ?"
+        "SELECT data, created_at FROM api_render_cache WHERE content_hash = $1 AND format = $2"
     )
     .bind(&cache_key)
     .bind(&payload.format)
@@ -195,7 +195,7 @@ pub async fn render_handler(
     // Load user's account files
     let mut files_map: HashMap<String, Vec<u8>> = HashMap::new();
     if let Ok(files) = sqlx::query_as::<_, (String, Vec<u8>)>(
-        "SELECT name, data FROM files WHERE owner_id = ?"
+        "SELECT name, data FROM files WHERE owner_id = $1"
     )
     .bind(&user_id)
     .fetch_all(&state.db)
@@ -232,7 +232,7 @@ pub async fn render_handler(
             // Store in cache (ignore errors — concurrent inserts are fine)
             let cache_id = Uuid::new_v4().to_string();
             let _ = sqlx::query(
-                "INSERT INTO api_render_cache (id, content_hash, format, data, created_at) VALUES (?, ?, ?, ?, ?)"
+                "INSERT INTO api_render_cache (id, content_hash, format, data, created_at) VALUES ($1, $2, $3, $4, $5)"
             )
             .bind(&cache_id)
             .bind(&cache_key)
