@@ -8,6 +8,11 @@
 //! `session_id` (the row) and `session_user_id` (read by the existing handlers).
 //! [`session_guard`] strips `session_user_id` from every request whose session is
 //! missing, expired or revoked, so handlers never see a stale identity.
+//!
+//! Profile data (name, email, picture, admin/guest status) is taken from the IdP
+//! at sign-in. Each session records a fingerprint of how that data was derived;
+//! when an update or a configuration change alters it, the session is dropped and
+//! the browser re-authenticates, silently while the IdP session lasts.
 
 use std::sync::Arc;
 
@@ -39,6 +44,9 @@ pub const USER_COOKIE: &str = "session_user_id";
 const FLOW_COOKIE: &str = "oidc_flow";
 const CALLBACK_PATH: &str = "/api/auth/oidc/callback";
 const BACKCHANNEL_LOGOUT_EVENT: &str = "http://schemas.openid.net/event/backchannel-logout";
+/// Bump whenever provisioning starts taking new data from the token (e.g. a new
+/// claim), so existing sessions are refreshed through a new sign-in.
+const PROFILE_SCHEMA_VERSION: u32 = 2;
 
 type OidcClient = CoreClient<
     EndpointSet,
@@ -133,6 +141,27 @@ impl OidcConfig {
     fn secure_cookies(&self) -> bool {
         self.public_url.starts_with("https://")
     }
+
+    /// Identifies how profiles are derived from the token. Sessions created under
+    /// a different fingerprint are renewed so that changed roles or new profile
+    /// fields take effect without waiting for the session to expire.
+    fn profile_fingerprint(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let parts = [
+            PROFILE_SCHEMA_VERSION.to_string(),
+            self.issuer.clone(),
+            self.subject_claim.clone(),
+            self.username_claim.clone(),
+            self.roles_claim.clone().unwrap_or_default(),
+            self.admin_role.clone().unwrap_or_default(),
+            self.required_role.clone().unwrap_or_default(),
+            self.guest_role.clone().unwrap_or_default(),
+            self.organizations_claim.clone(),
+            self.home_organizations.join(","),
+        ];
+        let digest = Sha256::digest(parts.join("\u{1f}").as_bytes());
+        digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +176,7 @@ struct Provider {
 
 pub struct Oidc {
     pub config: OidcConfig,
+    profile_fingerprint: String,
     http: reqwest::Client,
     provider: RwLock<Option<Arc<Provider>>>,
 }
@@ -158,7 +188,8 @@ impl Oidc {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("failed to build HTTP client");
-        Oidc { config, http, provider: RwLock::new(None) }
+        let profile_fingerprint = config.profile_fingerprint();
+        Oidc { config, profile_fingerprint, http, provider: RwLock::new(None) }
     }
 
     pub fn http(&self) -> &reqwest::Client {
@@ -384,12 +415,15 @@ pub async fn callback(
 
     let session_id = Uuid::new_v4().to_string();
     let expires_at = chrono::Utc::now().timestamp() + oidc.config.session_max_age_secs;
-    sqlx::query("INSERT INTO sessions (id, user_id, idp_session_id, id_token, expires_at) VALUES ($1, $2, $3, $4, $5)")
+    sqlx::query(
+        "INSERT INTO sessions (id, user_id, idp_session_id, id_token, expires_at, profile_fingerprint) VALUES ($1, $2, $3, $4, $5, $6)",
+    )
         .bind(&session_id)
         .bind(&user_id)
         .bind(&idp_session_id)
         .bind(&id_token_raw)
         .bind(expires_at)
+        .bind(&oidc.profile_fingerprint)
         .execute(&state.db)
         .await
         .map_err(internal)?;
@@ -870,13 +904,29 @@ pub async fn session_guard(
 
     let valid = match jar.get(SESSION_COOKIE).map(|c| c.value().to_string()) {
         Some(session_id) => {
-            let row: Result<Option<(String,)>, _> =
-                sqlx::query_as("SELECT user_id FROM sessions WHERE id = $1 AND expires_at > $2")
-                    .bind(&session_id)
-                    .bind(chrono::Utc::now().timestamp())
-                    .fetch_optional(&state.db)
-                    .await;
-            matches!(row, Ok(Some((owner,))) if owner == user_id)
+            let row: Result<Option<(String, Option<String>)>, _> = sqlx::query_as(
+                "SELECT user_id, profile_fingerprint FROM sessions WHERE id = $1 AND expires_at > $2",
+            )
+            .bind(&session_id)
+            .bind(chrono::Utc::now().timestamp())
+            .fetch_optional(&state.db)
+            .await;
+            match row {
+                Ok(Some((owner, fingerprint))) if owner == user_id => {
+                    let current = fingerprint.as_deref() == Some(state.oidc.profile_fingerprint.as_str());
+                    if !current {
+                        // Profile rules changed since sign-in: end the session so the
+                        // next request re-authenticates and picks up fresh data.
+                        tracing::info!("Renewing session of user {user_id}: profile settings changed since sign-in");
+                        let _ = sqlx::query("DELETE FROM sessions WHERE id = $1")
+                            .bind(&session_id)
+                            .execute(&state.db)
+                            .await;
+                    }
+                    current
+                }
+                _ => false,
+            }
         }
         None => false,
     };

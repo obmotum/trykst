@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 
 export type User = {
     id: string;
@@ -32,6 +32,33 @@ export async function fetchUser() {
  */
 export function redirectToLogin(returnTo: string = window.location.pathname + window.location.search) {
     window.location.href = `/api/auth/oidc/login?return_to=${encodeURIComponent(returnTo)}`;
+}
+
+/**
+ * Sends the browser through sign-in again when an API call reports that a signed-in
+ * user's session ended (expired, revoked at the IdP, or renewed after profile
+ * settings changed). With an active IdP session this returns silently to the page.
+ */
+export function watchSessionLoss() {
+    const original = window.fetch.bind(window);
+    let redirecting = false;
+    window.fetch = async (input, init) => {
+        const response = await original(input, init);
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const path = new URL(url, window.location.href).pathname;
+        if (
+            response.status === 401 &&
+            !redirecting &&
+            get(userStore) &&
+            path.startsWith('/api/') &&
+            !path.startsWith('/api/auth/logout')
+        ) {
+            redirecting = true;
+            userStore.set(null);
+            redirectToLogin();
+        }
+        return response;
+    };
 }
 
 /** Ends the Trykst session, then the IdP session. */

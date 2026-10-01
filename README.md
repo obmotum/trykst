@@ -23,6 +23,7 @@ Trykst is a fork of [TypstDrive](https://github.com/SirBlobby/TypstDrive) by Sir
 - **Guests for external users**: guests only see what was shared with them and cannot create documents, spaces, packages or API keys, nor browse the directory.
 - **Central logout**: signing out ends the IdP session too (RP-initiated logout), and back-channel logout ends Trykst sessions the moment the IdP revokes them.
 - **Server-side sessions** with a maximum age; a re-login at the IdP is silent while its session lasts.
+- **Always-current profiles**: name, email, picture and roles come from the IdP at sign-in. When an update or a change to the role settings affects them, existing sessions are renewed automatically, silently while the IdP session lasts.
 
 ### Sharing
 - **People picker**: find colleagues by name, email or domain in the IdP directory, including people who have never signed in; shows avatar, organization and email.

@@ -173,6 +173,7 @@ pub async fn init_schema(pool: &AnyPool) {
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             idp_session_id TEXT,
+            profile_fingerprint TEXT,
             id_token TEXT,
             expires_at BIGINT NOT NULL
         )",
@@ -188,6 +189,7 @@ pub async fn init_schema(pool: &AnyPool) {
 
     // Idempotent migrations for existing databases
     let migrations = [
+        "ALTER TABLE sessions ADD COLUMN profile_fingerprint TEXT",
         "ALTER TABLE users ADD COLUMN avatar_url TEXT",
         "UPDATE packages SET namespace = 'trykst' WHERE namespace = 'typstdrive'",
         "ALTER TABLE users ADD COLUMN is_guest INTEGER NOT NULL DEFAULT 0",

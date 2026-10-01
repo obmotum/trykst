@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { fetchUser, redirectToLogin, userStore } from '$lib/ts/auth';
+	import { fetchUser, redirectToLogin, userStore, watchSessionLoss } from '$lib/ts/auth';
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { page } from '$app/stores';
@@ -21,6 +21,7 @@
 			redirectToLogin();
 			return;
 		}
+		watchSessionLoss();
 		loaded = true;
 	});
 
