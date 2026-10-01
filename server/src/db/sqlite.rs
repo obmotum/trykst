@@ -1,18 +1,17 @@
 use sqlx::AnyPool;
 
+// Keep in sync with postgres.rs. Flags are 0/1 integers on both databases
+// because sqlx::Any cannot decode a Postgres BOOLEAN into the i64 fields.
 pub async fn init_schema(pool: &AnyPool) {
-    sqlx::query("PRAGMA foreign_keys = ON")
-        .execute(pool)
-        .await
-        .expect("Failed to enable SQLite foreign keys");
-
     let statements = [
+        "CREATE TABLE IF NOT EXISTS schema_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
         "CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             username TEXT NOT NULL UNIQUE,
             email TEXT UNIQUE,
-            -- Legacy column from local password auth; always '' for OIDC users.
-            password_hash TEXT NOT NULL DEFAULT '',
             oidc_issuer TEXT,
             oidc_subject TEXT,
             avatar_url TEXT,
@@ -20,72 +19,110 @@ pub async fn init_schema(pool: &AnyPool) {
             is_guest INTEGER NOT NULL DEFAULT 0,
             created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
         )",
-        "CREATE TABLE IF NOT EXISTS folders (
+        "CREATE UNIQUE INDEX IF NOT EXISTS users_oidc_identity ON users(oidc_issuer, oidc_subject)",
+        "CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
-            owner_id TEXT NOT NULL REFERENCES users(id),
-            parent_id TEXT REFERENCES folders(id),
-            name TEXT NOT NULL,
-            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            idp_session_id TEXT,
+            profile_fingerprint TEXT,
+            id_token TEXT,
+            expires_at BIGINT NOT NULL
         )",
-        "CREATE TABLE IF NOT EXISTS documents (
+        "CREATE INDEX IF NOT EXISTS sessions_idp_session ON sessions(idp_session_id)",
+        // --- Projects: the unit of membership and permissions -------------------
+        "CREATE TABLE IF NOT EXISTS projects (
             id TEXT PRIMARY KEY,
-            owner_id TEXT NOT NULL REFERENCES users(id),
-            folder_id TEXT REFERENCES folders(id),
-            title TEXT NOT NULL,
-            content BLOB,
-            thumbnail_svg TEXT,
-            public_role TEXT DEFAULT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
             created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
             updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
         )",
-        "CREATE TABLE IF NOT EXISTS files (
+        "CREATE TABLE IF NOT EXISTS project_members (
             id TEXT PRIMARY KEY,
-            owner_id TEXT NOT NULL REFERENCES users(id),
-            document_id TEXT REFERENCES documents(id),
-            folder_id TEXT REFERENCES folders(id),
-            name TEXT NOT NULL,
-            mime_type TEXT NOT NULL,
-            data BLOB NOT NULL,
-            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
-        )",
-        "CREATE TABLE IF NOT EXISTS collaborators (
-            id TEXT PRIMARY KEY,
-            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            role TEXT NOT NULL,
+            role TEXT NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')),
             created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-            UNIQUE(document_id, user_id)
+            UNIQUE(project_id, user_id)
         )",
-        "CREATE TABLE IF NOT EXISTS invitations (
+        "CREATE INDEX IF NOT EXISTS project_members_user ON project_members(user_id)",
+        // --- Documents: a bundle of files that compiles to one output -----------
+        "CREATE TABLE IF NOT EXISTS documents (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            entrypoint_id TEXT REFERENCES nodes(id) ON DELETE SET NULL,
+            thumbnail_svg TEXT,
+            public_role TEXT CHECK (public_role IN ('viewer', 'editor')),
+            created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+            updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        )",
+        "CREATE INDEX IF NOT EXISTS documents_project ON documents(project_id)",
+        // --- Nodes: folders and files of a document (adjacency list) ------------
+        // parent_id NULL = top level of the document. Text files hold a Yjs update,
+        // binary files their raw bytes, folders no content.
+        "CREATE TABLE IF NOT EXISTS nodes (
             id TEXT PRIMARY KEY,
             document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-            role TEXT NOT NULL,
-            token TEXT NOT NULL UNIQUE,
+            parent_id TEXT REFERENCES nodes(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('folder', 'text', 'binary')),
+            content BLOB,
+            mime_type TEXT,
             created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-            expires_at TEXT
+            updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
         )",
+        // NULLs never collide in a plain UNIQUE constraint, so top-level names are
+        // made unique through the expression.
+        "CREATE UNIQUE INDEX IF NOT EXISTS nodes_unique_name ON nodes(document_id, COALESCE(parent_id, ''), name)",
+        "CREATE INDEX IF NOT EXISTS nodes_parent ON nodes(parent_id)",
         "CREATE TABLE IF NOT EXISTS comments (
             id TEXT PRIMARY KEY,
             document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            node_id TEXT REFERENCES nodes(id) ON DELETE SET NULL,
             user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             content TEXT NOT NULL,
-            resolved INTEGER DEFAULT 0,
+            resolved INTEGER NOT NULL DEFAULT 0,
             created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
         )",
-        "CREATE TABLE IF NOT EXISTS document_history (
-            id TEXT PRIMARY KEY,
-            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-            content BLOB NOT NULL,
-            created_by TEXT NOT NULL REFERENCES users(id) ON DELETE SET NULL,
-            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
-        )",
+        // A version is a snapshot of the whole file tree.
         "CREATE TABLE IF NOT EXISTS document_versions (
             id TEXT PRIMARY KEY,
             document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            content TEXT NOT NULL,
+            user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+            label TEXT,
+            snapshot BLOB NOT NULL,
             created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
         )",
+        // --- Packages: per project (@project/...) or instance-wide (@trykst/...) --
+        "CREATE TABLE IF NOT EXISTS packages (
+            id TEXT PRIMARY KEY,
+            project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+            owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+        )",
+        "CREATE UNIQUE INDEX IF NOT EXISTS packages_unique_name ON packages(COALESCE(project_id, ''), name)",
+        "CREATE TABLE IF NOT EXISTS package_versions (
+            id TEXT PRIMARY KEY,
+            package_id TEXT NOT NULL REFERENCES packages(id) ON DELETE CASCADE,
+            version TEXT NOT NULL,
+            entrypoint TEXT NOT NULL DEFAULT 'lib.typ',
+            manifest BLOB,
+            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+            UNIQUE(package_id, version)
+        )",
+        "CREATE TABLE IF NOT EXISTS package_files (
+            id TEXT PRIMARY KEY,
+            version_id TEXT NOT NULL REFERENCES package_versions(id) ON DELETE CASCADE,
+            path TEXT NOT NULL,
+            data BLOB NOT NULL,
+            UNIQUE(version_id, path)
+        )",
+        // --- Render API ------------------------------------------------------------
         "CREATE TABLE IF NOT EXISTS api_keys (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -115,93 +152,12 @@ pub async fn init_schema(pool: &AnyPool) {
             count INTEGER NOT NULL DEFAULT 1,
             PRIMARY KEY(key_id, minute)
         )",
-        "CREATE TABLE IF NOT EXISTS spaces (
-            id TEXT PRIMARY KEY,
-            owner_id TEXT NOT NULL REFERENCES users(id),
-            folder_id TEXT REFERENCES folders(id),
-            name TEXT NOT NULL,
-            entrypoint TEXT NOT NULL DEFAULT 'main.typ',
-            thumbnail_svg TEXT,
-            public_role TEXT DEFAULT NULL,
-            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-            updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
-        )",
-        "CREATE TABLE IF NOT EXISTS space_files (
-            id TEXT PRIMARY KEY,
-            space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
-            path TEXT NOT NULL,
-            kind TEXT NOT NULL DEFAULT 'text',
-            content BLOB,
-            mime_type TEXT NOT NULL DEFAULT 'text/plain',
-            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-            UNIQUE(space_id, path)
-        )",
-        "CREATE TABLE IF NOT EXISTS space_collaborators (
-            id TEXT PRIMARY KEY,
-            space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
-            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            role TEXT NOT NULL,
-            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-            UNIQUE(space_id, user_id)
-        )",
-        "CREATE TABLE IF NOT EXISTS packages (
-            id TEXT PRIMARY KEY,
-            owner_id TEXT NOT NULL REFERENCES users(id),
-            namespace TEXT NOT NULL DEFAULT 'trykst',
-            name TEXT NOT NULL,
-            description TEXT,
-            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-            UNIQUE(namespace, name)
-        )",
-        "CREATE TABLE IF NOT EXISTS package_versions (
-            id TEXT PRIMARY KEY,
-            package_id TEXT NOT NULL REFERENCES packages(id) ON DELETE CASCADE,
-            version TEXT NOT NULL,
-            entrypoint TEXT NOT NULL DEFAULT 'lib.typ',
-            manifest BLOB,
-            created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-            UNIQUE(package_id, version)
-        )",
-        "CREATE TABLE IF NOT EXISTS package_files (
-            id TEXT PRIMARY KEY,
-            version_id TEXT NOT NULL REFERENCES package_versions(id) ON DELETE CASCADE,
-            path TEXT NOT NULL,
-            data BLOB NOT NULL,
-            UNIQUE(version_id, path)
-        )",
-        "CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            idp_session_id TEXT,
-            profile_fingerprint TEXT,
-            id_token TEXT,
-            expires_at BIGINT NOT NULL
-        )",
-        "CREATE INDEX IF NOT EXISTS sessions_idp_session ON sessions(idp_session_id)",
     ];
 
     for stmt in &statements {
         sqlx::query(stmt)
             .execute(pool)
             .await
-            .expect("Failed to execute SQLite schema");
-    }
-
-    // Idempotent migrations for existing databases
-    let migrations = [
-        "ALTER TABLE sessions ADD COLUMN profile_fingerprint TEXT",
-        "ALTER TABLE users ADD COLUMN avatar_url TEXT",
-        "UPDATE packages SET namespace = 'trykst' WHERE namespace = 'typstdrive'",
-        "ALTER TABLE users ADD COLUMN is_guest INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN oidc_issuer TEXT",
-        "ALTER TABLE users ADD COLUMN oidc_subject TEXT",
-        "CREATE UNIQUE INDEX IF NOT EXISTS users_oidc_identity ON users(oidc_issuer, oidc_subject)",
-        "DROP TABLE IF EXISTS device_tokens",
-        "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))",
-        "ALTER TABLE space_files ADD COLUMN updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))",
-    ];
-    for stmt in &migrations {
-        let _ = sqlx::query(stmt).execute(pool).await;
+            .unwrap_or_else(|e| panic!("Failed to execute SQLite schema: {e}\n{stmt}"));
     }
 }
