@@ -1,0 +1,11 @@
+{
+  "name": "trykst-screenshots",
+  "private": true,
+  "description": "Takes the README screenshots of a running Trykst dev instance",
+  "scripts": {
+    "shoot": "node shoot.js"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.12.0"
+  }
+}
