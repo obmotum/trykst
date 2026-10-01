@@ -6,6 +6,10 @@ name: Docker image
 #   tag v1.2.3  -> :1.2.3, :1.2, :sha-<short>
 # Pull requests that touch the image only build (no push).
 #
+# To rebuild an existing release (e.g. after changing this workflow), run it
+# manually from main with `release_tag` set: it builds the code at that tag and
+# publishes only the version tags (:1.2.3, :1.2), leaving :latest and :main alone.
+#
 # Each architecture builds on a native runner (emulating arm64 under QEMU would
 # take hours for the Rust build), pushes by digest, and the merge job combines
 # both digests into one manifest list under the final tags.
@@ -20,13 +24,18 @@ on:
       - .dockerignore
       - .github/workflows/docker-publish.yml
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Rebuild an existing release tag, e.g. v0.1.0 (leave empty to build the selected branch)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  group: docker-${{ github.ref }}
+  group: docker-${{ github.ref }}-${{ inputs.release_tag }}
   cancel-in-progress: true
 
 env:
@@ -46,6 +55,8 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag }}
 
       - name: Prepare
         id: vars
@@ -54,6 +65,7 @@ jobs:
           echo "image=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           platform=${{ matrix.platform }}
           echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Image metadata
         id: meta
@@ -64,6 +76,7 @@ jobs:
             org.opencontainers.image.title=Trykst
             org.opencontainers.image.description=Collaborative Typst editor with native OIDC and seamless SSO
             org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.revision=${{ steps.vars.outputs.revision }}
 
       - uses: docker/setup-buildx-action@v4
 
@@ -126,12 +139,13 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ steps.vars.outputs.image }}
+          # A rebuilt release only gets its version tags.
           tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch,enable=${{ inputs.release_tag == '' }}
+            type=semver,pattern={{version}},value=${{ inputs.release_tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.release_tag }}
+            type=sha,enable=${{ inputs.release_tag == '' }}
+            type=raw,value=latest,enable=${{ inputs.release_tag == '' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
