@@ -46,10 +46,8 @@ Trykst is a fork of [TypstDrive](https://github.com/SirBlobby/TypstDrive) by Sir
 Trykst needs an OpenID Provider. For a local test, the repository ships a Keycloak with a ready-made realm:
 
 ```bash
-git clone https://github.com/obmotum/trykst.git
+git clone --recursive --shallow-submodules https://github.com/obmotum/trykst.git
 cd trykst
-git clone https://github.com/typst/typst.git typst
-git -C typst checkout 9dfd3a08500b7896045f907433cf7b4b02434fad
 
 docker compose -f docker-compose.dev.yml up -d   # Keycloak on http://localhost:8080
 ```
@@ -143,7 +141,7 @@ Uploaded images are referenced by filename, remote images by URL:
 
 ## Local development
 
-1. Clone Typst into `typst/` at the commit pinned in the `Dockerfile` (see [Quick start](#quick-start)).
+1. Fetch the Typst compiler submodule if you cloned without `--recursive`: `git submodule update --init --depth 1`. Its pinned commit must match the one in the `Dockerfile`.
 2. Start the dev Keycloak: `docker compose -f docker-compose.dev.yml up -d`.
 3. Install `tinymist` and put it on your `PATH`; the backend uses it for LSP features.
 4. Frontend: `npm install`, then `npm run build` (served by the backend) or `npm run dev` (proxies `/api` and `/yjs` to port 3000).

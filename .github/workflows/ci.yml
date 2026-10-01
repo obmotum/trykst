@@ -13,16 +13,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Keep in sync with the Dockerfile.
-  TYPST_COMMIT: 9dfd3a08500b7896045f907433cf7b4b02434fad
-
 jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -41,14 +37,10 @@ jobs:
     name: Backend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      # typst/ is a gitlink without .gitmodules, so fetch the pinned commit directly.
-      - name: Fetch Typst compiler
-        run: |
-          git init -q typst
-          git -C typst fetch -q --depth 1 https://github.com/typst/typst.git "$TYPST_COMMIT"
-          git -C typst checkout -q FETCH_HEAD
+      # The Typst compiler is a submodule pinned to the same commit as the Dockerfile.
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
 
       - uses: dtolnay/rust-toolchain@stable
         with:
