@@ -15,6 +15,7 @@ import http.cookiejar
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -128,7 +129,8 @@ space_id = space.get("id")
 check("add space file", "POST", f"/api/spaces/{space_id}/files",
       {"path": "refs.bib", "kind": "text", "content": "@book{x}"})
 check("list space files", "GET", f"/api/spaces/{space_id}/files")
-check("publish package", "POST", "/api/packages/publish", {"space_id": space_id, "version": "0.1.0"})
+# Package versions are immutable; a unique version keeps the test repeatable on a reused database.
+check("publish package", "POST", "/api/packages/publish", {"space_id": space_id, "version": f"0.0.{int(time.time())}"})
 check("list packages", "GET", "/api/packages")
 check("create API key", "POST", "/api/keys", {"name": "e2e"})
 check("list API keys", "GET", "/api/keys")
