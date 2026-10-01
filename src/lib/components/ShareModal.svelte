@@ -2,11 +2,12 @@
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
     import Icon from '@iconify/svelte';
+    import Avatar from '$lib/components/Avatar.svelte';
     import { userStore } from '$lib/ts/auth';
     
     let { onClose, docId = undefined } = $props<{ onClose: () => void, docId?: string }>();
 
-    type CollaboratorView = { id: string; user_id: string; username: string; email: string | null; role: string; created_at: string };
+    type CollaboratorView = { id: string; user_id: string; username: string; email: string | null; avatar_url: string | null; role: string; created_at: string };
     type Person = {
         subject: string | null;
         user_id: string | null;
@@ -39,18 +40,11 @@
     let selectedPerson = $state<Person | null>(null);
     let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const AVATAR_COLORS = ['#1e3a5f', '#0f766e', '#7c2d12', '#4c1d95', '#9f1239', '#365314', '#1e40af', '#854d0e'];
 
     function personName(p: Person) {
         return p.display_name || p.username;
     }
 
-    function avatarColor(p: Person) {
-        const key = p.subject ?? p.user_id ?? p.username;
-        let hash = 0;
-        for (const ch of key) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
-        return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-    }
 
     async function runSearch(q: string, limit: number) {
         try {
@@ -249,13 +243,7 @@
                                         ? 'border-gray-800 dark:border-gray-100 bg-gray-100 dark:bg-white/10'
                                         : 'border-transparent'}"
                                 >
-                                    {#if person.picture}
-                                        <img src={person.picture} alt="" class="h-9 w-9 rounded-full object-cover flex-shrink-0" />
-                                    {:else}
-                                        <span class="h-9 w-9 rounded-full flex items-center justify-center text-sm font-semibold text-white flex-shrink-0" style="background-color: {avatarColor(person)}">
-                                            {personName(person)[0]?.toUpperCase()}
-                                        </span>
-                                    {/if}
+                                    <Avatar name={personName(person)} url={person.picture} seed={person.subject ?? person.user_id ?? person.username} size={36} />
                                     <span class="min-w-0 flex-1">
                                         <span class="block text-sm text-gray-900 dark:text-gray-100 truncate">
                                             {personName(person)}{#if person.organization}<span class="text-gray-500 dark:text-gray-400">{` | ${person.organization}`}</span>{/if}
@@ -298,9 +286,7 @@
                     <div class="text-sm font-semibold text-[var(--theme-text)]" style="color: var(--theme-text);">People with access</div>
                     {#each collaborators as collab (collab.id)}
                         <div class="flex items-center gap-3 py-1.5">
-                            <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-bold flex-shrink-0">
-                                {collab.username[0].toUpperCase()}
-                            </div>
+                            <Avatar name={collab.username} url={collab.avatar_url} seed={collab.user_id} size={32} />
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{collab.username}</p>
                                 <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{collab.email}</p>

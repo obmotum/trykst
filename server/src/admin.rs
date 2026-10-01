@@ -33,7 +33,7 @@ pub async fn list_users(
     require_admin(&state, &jar).await?;
 
     let users = sqlx::query_as::<_, AdminUserView>(
-        "SELECT id, username, email, is_admin, is_guest, created_at FROM users ORDER BY created_at ASC"
+        "SELECT id, username, email, is_admin, is_guest, avatar_url, created_at FROM users ORDER BY created_at ASC"
     )
     .fetch_all(&state.db)
     .await
@@ -76,7 +76,7 @@ pub async fn update_user(
     }
 
     let user = sqlx::query_as::<_, AdminUserView>(
-        "SELECT id, username, email, is_admin, is_guest, created_at FROM users WHERE id = $1"
+        "SELECT id, username, email, is_admin, is_guest, avatar_url, created_at FROM users WHERE id = $1"
     )
     .bind(&user_id)
     .fetch_optional(&state.db)

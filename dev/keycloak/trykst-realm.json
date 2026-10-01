@@ -83,6 +83,9 @@
       "attributes": {
         "organization": [
           "Example IT Solutions GmbH"
+        ],
+        "picture": [
+          "https://www.gravatar.com/avatar/2960a687c8031d3d105b67802b5e130e?d=identicon&s=128"
         ]
       }
     },
@@ -138,6 +141,9 @@
       "attributes": {
         "organization": [
           "Example IT Solutions GmbH"
+        ],
+        "picture": [
+          "https://www.gravatar.com/avatar/7988e6c71ecfda5693511696919f5511?d=identicon&s=128"
         ]
       },
       "credentials": [
@@ -282,6 +288,9 @@
       "attributes": {
         "organization": [
           "Partner AG"
+        ],
+        "picture": [
+          "https://www.gravatar.com/avatar/8286d1e65bbc79c110092aecd5d8a7fd?d=identicon&s=128"
         ]
       },
       "credentials": [

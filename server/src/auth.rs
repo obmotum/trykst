@@ -34,7 +34,7 @@ pub async fn me(
         None => return Err((StatusCode::UNAUTHORIZED, "Not logged in".to_string())),
     };
 
-    let user = sqlx::query_as::<_, User>("SELECT id, username, email, is_admin, is_guest FROM users WHERE id = $1")
+    let user = sqlx::query_as::<_, User>("SELECT id, username, email, is_admin, is_guest, avatar_url FROM users WHERE id = $1")
         .bind(&user_id)
         .fetch_optional(&state.db)
         .await

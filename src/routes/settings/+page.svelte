@@ -3,6 +3,7 @@
     import { onMount, onDestroy } from 'svelte';
     import { userStore, logout, redirectToLogin } from '$lib/ts/auth';
     import Icon from '@iconify/svelte';
+    import Avatar from '$lib/components/Avatar.svelte';
     import ThemePicker from '$lib/components/ThemePicker.svelte';
     import Footer from '$lib/components/Footer.svelte';
     import { Chart, LineController, LineElement, PointElement, CategoryScale, LinearScale, Filler, Tooltip } from 'chart.js';
@@ -14,6 +15,7 @@
         email: string;
         is_admin: boolean;
         is_guest: boolean;
+        avatar_url: string | null;
         created_at: string;
     };
 
@@ -366,9 +368,7 @@
                         </h2>
 
                         <div class="flex items-center gap-4 mb-6">
-                            <div class="h-14 w-14 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 text-2xl font-bold border border-blue-500/20 flex-shrink-0">
-                                {$userStore?.username?.[0]?.toUpperCase() || '?'}
-                            </div>
+                            <Avatar name={$userStore?.username} url={$userStore?.avatar_url} seed={$userStore?.id} size={56} />
                             <div>
                                 <p class="text-base font-bold text-gray-900 dark:text-white">{$userStore?.username}</p>
                                 <p class="text-sm text-gray-500 dark:text-gray-400">{$userStore?.email}</p>
@@ -681,9 +681,7 @@
                             <div class="space-y-2">
                                 {#each adminUsers as user (user.id)}
                                     <div class="flex items-center gap-4 px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 group">
-                                        <div class="h-9 w-9 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-sm flex-shrink-0">
-                                            {user.username[0].toUpperCase()}
-                                        </div>
+                                        <Avatar name={user.username} url={user.avatar_url} seed={user.id} size={36} />
                                         <div class="flex-1 min-w-0">
                                             <div class="flex items-center gap-2">
                                                 <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">{user.username}</p>

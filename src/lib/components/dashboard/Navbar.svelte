@@ -2,6 +2,7 @@
     import { goto } from '$app/navigation';
     import { userStore, logout } from '$lib/ts/auth';
     import Icon from '@iconify/svelte';
+    import Avatar from '$lib/components/Avatar.svelte';
     import ThemePicker from '$lib/components/ThemePicker.svelte';
 </script>
 
@@ -12,7 +13,7 @@
     </h1>
     <div class="flex items-center gap-6">
         <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-medium">
-            <Icon icon="mdi:account-circle" class="text-xl" />
+            <Avatar name={$userStore?.username} url={$userStore?.avatar_url} seed={$userStore?.id} size={28} />
             {$userStore?.username}
         </div>
         <div class="h-6 w-px bg-gray-300 dark:bg-white/20"></div>

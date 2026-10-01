@@ -400,10 +400,10 @@ pub async fn search(
     }
 
     let pattern = format!("%{}%", q.to_lowercase().replace(['%', '_'], ""));
-    // (id, username, email, oidc_subject, is_guest)
-    type LocalUser = (String, String, Option<String>, Option<String>, i64);
+    // (id, username, email, oidc_subject, is_guest, avatar_url)
+    type LocalUser = (String, String, Option<String>, Option<String>, i64, Option<String>);
     let local: Vec<LocalUser> = sqlx::query_as(
-        "SELECT id, username, email, oidc_subject, is_guest FROM users \
+        "SELECT id, username, email, oidc_subject, is_guest, avatar_url FROM users \
          WHERE LOWER(username) LIKE $1 OR LOWER(COALESCE(email, '')) LIKE $2 \
          ORDER BY username LIMIT $3",
     )
@@ -416,14 +416,14 @@ pub async fn search(
 
     let mut results: Vec<SearchResult> = local
         .into_iter()
-        .map(|(id, username, email, subject, is_guest)| SearchResult {
+        .map(|(id, username, email, subject, is_guest, avatar_url)| SearchResult {
             subject,
             user_id: Some(id),
             username,
             email,
             display_name: None,
             organization: None,
-            picture: None,
+            picture: avatar_url,
             is_guest: is_guest != 0,
         })
         .collect();
@@ -434,7 +434,7 @@ pub async fn search(
         if let Some(existing) = results.iter_mut().find(|r| r.subject.as_deref() == Some(person.subject.as_str())) {
             existing.display_name = person.display_name;
             existing.organization = person.organization;
-            existing.picture = person.picture;
+            existing.picture = person.picture.or(existing.picture.take());
             continue;
         }
         results.push(SearchResult {

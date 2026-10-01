@@ -236,6 +236,11 @@ fn claim_organizations(claims: &Value, path: &str) -> Option<Vec<String>> {
     }
 }
 
+/// Only absolute http(s) URLs are accepted as profile pictures.
+fn is_web_url(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://")
+}
+
 fn claim_roles(claims: &Value, path: &str) -> Option<Vec<String>> {
     match claim_at(claims, path)? {
         Value::Array(items) => Some(items.iter().filter_map(Value::as_str).map(str::to_string).collect()),
@@ -454,6 +459,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
         internal(format!("Claim '{}' missing from ID token", config.subject_claim))
     })?;
     let email = claim_str(claims, "email");
+    let avatar_url = claim_str(claims, "picture").filter(|u| is_web_url(u));
     let email_verified = claims.get("email_verified").and_then(Value::as_bool).unwrap_or(false);
     let preferred_username = claim_str(claims, &config.username_claim)
         .or_else(|| email.as_ref().and_then(|e| e.split('@').next().map(str::to_string)))
@@ -550,7 +556,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
                 .map_err(internal)?;
             let is_admin = config.admin_role.is_none() && is_first.0 == 0 && !is_guest;
             sqlx::query(
-                "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject) VALUES ($1, $2, $3, '', $4, $5, $6)",
+                "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject, avatar_url) VALUES ($1, $2, $3, '', $4, $5, $6, $7)",
             )
             .bind(&id)
             .bind(&username)
@@ -558,6 +564,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
             .bind(if is_admin { 1i64 } else { 0i64 })
             .bind(&issuer)
             .bind(&subject)
+            .bind(&avatar_url)
             .execute(&state.db)
             .await
             .map_err(|e| match e {
@@ -574,9 +581,10 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
 
     // Keep profile data in sync with the IdP on every login.
     let username = unique_username(state, &preferred_username, Some(&user_id)).await?;
-    let update = sqlx::query("UPDATE users SET username = $1, email = $2 WHERE id = $3")
+    let update = sqlx::query("UPDATE users SET username = $1, email = $2, avatar_url = $3 WHERE id = $4")
         .bind(&username)
         .bind(&email)
+        .bind(&avatar_url)
         .bind(&user_id)
         .execute(&state.db)
         .await;
@@ -678,6 +686,7 @@ pub async fn resolve_invitee(state: &AppState, subject: Option<&str>, email: Opt
         return Err((StatusCode::BAD_REQUEST, "Choose a person or enter an email address".to_string()));
     };
 
+    let avatar_url = person.as_ref().and_then(|p| p.picture.clone());
     let (subject, username, email) = match person {
         Some(p) => {
             // Someone may already hold this email without being linked yet.
@@ -715,13 +724,14 @@ pub async fn resolve_invitee(state: &AppState, subject: Option<&str>, email: Opt
     let id = Uuid::new_v4().to_string();
     let username = unique_username(state, &username, None).await?;
     sqlx::query(
-        "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject) VALUES ($1, $2, $3, '', 0, $4, $5)",
+        "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject, avatar_url) VALUES ($1, $2, $3, '', 0, $4, $5, $6)",
     )
     .bind(&id)
     .bind(&username)
     .bind(&email)
     .bind(subject.as_ref().map(|_| issuer.clone()))
     .bind(&subject)
+    .bind(&avatar_url)
     .execute(&state.db)
     .await
     .map_err(internal)?;

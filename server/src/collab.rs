@@ -125,7 +125,7 @@ pub async fn list_collaborators(
     }
 
     let collaborators = sqlx::query_as::<_, CollaboratorView>(
-        "SELECT c.id, c.user_id, u.username, u.email, c.role, c.created_at \
+        "SELECT c.id, c.user_id, u.username, u.email, u.avatar_url, c.role, c.created_at \
          FROM collaborators c \
          INNER JOIN users u ON u.id = c.user_id \
          WHERE c.document_id = $1 \
@@ -217,7 +217,7 @@ fn can_write_comments(role: &str) -> bool {
 
 // resolved is a 0/1 integer on both databases; rows from older schemas may hold NULL.
 const COMMENT_COLUMNS: &str = "c.id, c.document_id, c.user_id, c.content, \
-     COALESCE(CAST(c.resolved AS INTEGER), 0) AS resolved, c.created_at, u.username as author_name";
+     COALESCE(CAST(c.resolved AS INTEGER), 0) AS resolved, c.created_at, u.username as author_name, u.avatar_url as author_avatar_url";
 
 async fn fetch_comment(state: &AppState, comment_id: &str) -> Result<Option<Comment>, (StatusCode, String)> {
     sqlx::query_as::<_, Comment>(&format!(
@@ -330,7 +330,7 @@ pub async fn create_version(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let version = sqlx::query_as::<_, crate::models::DocumentVersion>(
-        "SELECT v.id, v.document_id, v.user_id, v.content, v.created_at, u.username as author_name \
+        "SELECT v.id, v.document_id, v.user_id, v.content, v.created_at, u.username as author_name, u.avatar_url as author_avatar_url \
          FROM document_versions v \
          LEFT JOIN users u ON v.user_id = u.id \
          WHERE v.id = $1"
@@ -352,7 +352,7 @@ pub async fn get_versions(
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
     let versions = sqlx::query_as::<_, crate::models::DocumentVersion>(
-        "SELECT v.id, v.document_id, v.user_id, v.content, v.created_at, u.username as author_name \
+        "SELECT v.id, v.document_id, v.user_id, v.content, v.created_at, u.username as author_name, u.avatar_url as author_avatar_url \
          FROM document_versions v \
          LEFT JOIN users u ON v.user_id = u.id \
          WHERE v.document_id = $1 \

@@ -7,6 +7,7 @@ export type User = {
     is_admin: boolean;
     /** External user: only sees what was shared with them, cannot create content. */
     is_guest: boolean;
+    avatar_url: string | null;
 };
 
 export const userStore = writable<User | null>(null);

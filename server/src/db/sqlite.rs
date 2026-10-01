@@ -15,6 +15,7 @@ pub async fn init_schema(pool: &AnyPool) {
             password_hash TEXT NOT NULL DEFAULT '',
             oidc_issuer TEXT,
             oidc_subject TEXT,
+            avatar_url TEXT,
             is_admin INTEGER NOT NULL DEFAULT 0,
             is_guest INTEGER NOT NULL DEFAULT 0,
             created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
@@ -187,6 +188,7 @@ pub async fn init_schema(pool: &AnyPool) {
 
     // Idempotent migrations for existing databases
     let migrations = [
+        "ALTER TABLE users ADD COLUMN avatar_url TEXT",
         "UPDATE packages SET namespace = 'trykst' WHERE namespace = 'typstdrive'",
         "ALTER TABLE users ADD COLUMN is_guest INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN oidc_issuer TEXT",

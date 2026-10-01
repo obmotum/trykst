@@ -24,6 +24,8 @@ pub struct User {
     /// External user: may only work with documents and spaces shared with them.
     #[serde(with = "serde_i64_bool")]
     pub is_guest: i64,
+    /// Profile picture URL from the IdP (`picture` claim).
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -35,6 +37,7 @@ pub struct AdminUserView {
     pub is_admin: i64,
     #[serde(with = "serde_i64_bool")]
     pub is_guest: i64,
+    pub avatar_url: Option<String>,
     pub created_at: String,
 }
 
@@ -201,6 +204,7 @@ pub struct CollaboratorView {
     pub user_id: String,
     pub username: String,
     pub email: Option<String>,
+    pub avatar_url: Option<String>,
     pub role: String,
     pub created_at: String,
 }
@@ -225,6 +229,8 @@ pub struct Comment {
     pub resolved: i64,
     pub created_at: String,
     pub author_name: Option<String>,
+    #[sqlx(default)]
+    pub author_avatar_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -247,6 +253,8 @@ pub struct DocumentVersion {
     pub created_at: String,
     #[sqlx(default)]
     pub author_name: Option<String>,
+    #[sqlx(default)]
+    pub author_avatar_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Icon from '@iconify/svelte';
+	import Avatar from '$lib/components/Avatar.svelte';
 	import { userStore } from '../ts/auth';
 	import { commentReference } from '../ts/store';
 
@@ -15,6 +16,7 @@
 		resolved: boolean;
 		created_at: string;
 		author_name?: string;
+		author_avatar_url?: string | null;
 	};
 
 	let comments = $state<Comment[]>([]);
@@ -127,9 +129,7 @@
 				<div class="group flex flex-col gap-2 p-3 border rounded-xl shadow-sm hover:shadow-md transition-all {comment.resolved ? 'opacity-60' : ''} bg-[var(--theme-bg)] text-[var(--theme-text)] border-[var(--theme-border)]">
 					<div class="flex justify-between items-start">
 						<div class="flex items-center gap-2">
-							<div class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold">
-								{(comment.author_name || 'A').substring(0, 1).toUpperCase()}
-							</div>
+							<Avatar name={comment.author_name} url={comment.author_avatar_url} seed={comment.user_id} size={24} />
 							<div>
 								<p class="text-xs font-semibold text-[var(--theme-text)]">{comment.author_name || 'Anonymous'}</p>
 								<p class="text-[10px]">{formatDate(comment.created_at)}</p>

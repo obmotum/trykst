@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Icon from '@iconify/svelte';
+	import Avatar from '$lib/components/Avatar.svelte';
 	import { text } from '../ts/yjs-setup';
 
 	let { docId, onClose } = $props<{ docId: string, onClose: () => void }>();
@@ -12,6 +13,7 @@
 		content: string;
 		created_at: string;
 		author_name?: string;
+		author_avatar_url?: string | null;
 	};
 
 	let versions = $state<DocumentVersion[]>([]);
@@ -85,9 +87,7 @@
 				<div class="group flex flex-col gap-2 p-3 border rounded-xl shadow-sm hover:shadow-md transition-all bg-[var(--theme-bg)] text-[var(--theme-text)] border-[var(--theme-border)]">
 					<div class="flex justify-between items-start">
 						<div class="flex items-center gap-2">
-							<div class="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xs font-bold">
-								{(version.author_name || 'A').substring(0, 1).toUpperCase()}
-							</div>
+							<Avatar name={version.author_name} url={version.author_avatar_url} seed={version.user_id} size={24} />
 							<div>
 								<p class="text-xs font-semibold text-[var(--theme-text)]">{version.author_name || 'Anonymous'}</p>
 								<p class="text-[10px]">{formatDate(version.created_at)}</p>

@@ -10,6 +10,7 @@ pub async fn init_schema(pool: &AnyPool) {
             password_hash TEXT NOT NULL DEFAULT '',
             oidc_issuer TEXT,
             oidc_subject TEXT,
+            avatar_url TEXT,
             -- Flags are 0/1 integers like on SQLite; sqlx::Any cannot map BOOLEAN to i64.
             is_admin BIGINT NOT NULL DEFAULT 0,
             is_guest BIGINT NOT NULL DEFAULT 0,
@@ -183,6 +184,7 @@ pub async fn init_schema(pool: &AnyPool) {
 
     // Idempotent migrations for existing databases
     let migrations = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
         "UPDATE packages SET namespace = 'trykst' WHERE namespace = 'typstdrive'",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_guest BIGINT NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_issuer TEXT",
