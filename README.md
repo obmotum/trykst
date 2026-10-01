@@ -44,7 +44,7 @@ Trykst is a fork of [TypstDrive](https://github.com/SirBlobby/TypstDrive) by Sir
 Trykst needs an OpenID Provider. For a local test, the repository ships a Keycloak with a ready-made realm:
 
 ```bash
-git clone <your-trykst-repo-url> trykst
+git clone https://github.com/obmotum/trykst.git
 cd trykst
 git clone https://github.com/typst/typst.git typst
 git -C typst checkout 9dfd3a08500b7896045f907433cf7b4b02434fad
