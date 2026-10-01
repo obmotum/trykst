@@ -1,10 +1,14 @@
 name: Docker image
 
-# Builds the image on every push to main and on version tags, and publishes it to
+# Builds a multi-arch image (linux/amd64 + linux/arm64) and publishes it to
 # GitHub Container Registry as ghcr.io/<owner>/<repo>:
 #   main        -> :main, :latest, :sha-<short>
 #   tag v1.2.3  -> :1.2.3, :1.2, :sha-<short>
-# Pull requests only build (no push) to catch Dockerfile breakage early.
+# Pull requests that touch the image only build (no push).
+#
+# Each architecture builds on a native runner (emulating arm64 under QEMU would
+# take hours for the Rust build), pushes by digest, and the merge job combines
+# both digests into one manifest list under the final tags.
 
 on:
   push:
@@ -16,11 +20,6 @@ on:
       - .dockerignore
       - .github/workflows/docker-publish.yml
   workflow_dispatch:
-    inputs:
-      platforms:
-        description: "Target platforms, comma-separated (arm64 builds under QEMU and are slow)"
-        required: false
-        default: "linux/amd64"
 
 permissions:
   contents: read
@@ -34,22 +33,37 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  image:
-    name: Build and publish
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
 
-      - name: Resolve image name and platforms
+      - name: Prepare
         id: vars
         run: |
-          # Registry paths must be lowercase.
+          # Registry paths must be lowercase; artifact names cannot contain '/'.
           echo "image=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-          echo "platforms=${{ github.event.inputs.platforms || 'linux/amd64' }}" >> "$GITHUB_OUTPUT"
+          platform=${{ matrix.platform }}
+          echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        if: contains(steps.vars.outputs.platforms, 'arm')
-        uses: docker/setup-qemu-action@v4
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.vars.outputs.image }}
+          labels: |
+            org.opencontainers.image.title=Trykst
+            org.opencontainers.image.description=Collaborative Typst editor with native OIDC and seamless SSO
+            org.opencontainers.image.licenses=Apache-2.0
 
       - uses: docker/setup-buildx-action@v4
 
@@ -60,6 +74,52 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ steps.vars.outputs.image }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          cache-from: type=gha,scope=${{ steps.vars.outputs.pair }}
+          cache-to: type=gha,scope=${{ steps.vars.outputs.pair }},mode=max
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p "${{ runner.temp }}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ steps.vars.outputs.pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish multi-arch manifest
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v7
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Prepare
+        id: vars
+        run: echo "image=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
 
       - name: Image metadata
         id: meta
@@ -72,18 +132,20 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
-          labels: |
-            org.opencontainers.image.title=Trykst
-            org.opencontainers.image.description=Collaborative Typst editor with native OIDC and seamless SSO
-            org.opencontainers.image.licenses=Apache-2.0
 
-      - name: Build and push
-        uses: docker/build-push-action@v7
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
         with:
-          context: .
-          platforms: ${{ steps.vars.outputs.platforms }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ steps.vars.outputs.image }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: docker buildx imagetools inspect "${{ steps.vars.outputs.image }}:${{ steps.meta.outputs.version }}"

@@ -56,7 +56,7 @@ Then set the variables listed at the top of `docker-compose.dev.yml` and run the
 
 ## Self-hosting
 
-A Docker image packages the Rust backend and the SvelteKit frontend into one container. It is published to GitHub Container Registry:
+A Docker image packages the Rust backend and the SvelteKit frontend into one container. It is published to GitHub Container Registry for `linux/amd64` and `linux/arm64` (e.g. Raspberry Pi 4/5, Ampere, Apple Silicon hosts); Docker picks the matching architecture automatically:
 
 | Tag | Content |
 |---|---|
