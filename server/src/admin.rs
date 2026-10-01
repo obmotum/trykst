@@ -98,6 +98,30 @@ pub async fn delete_user(
         return Err((StatusCode::BAD_REQUEST, "Cannot delete your own account via admin panel".to_string()));
     }
 
+    // A project must not lose its last owner while others still work in it.
+    let stranded: Option<String> = sqlx::query_scalar(
+        "SELECT p.name FROM projects p          JOIN project_members m ON m.project_id = p.id AND m.user_id = $1 AND m.role = 'owner'          WHERE NOT EXISTS (SELECT 1 FROM project_members o WHERE o.project_id = p.id AND o.role = 'owner' AND o.user_id <> $1)            AND EXISTS (SELECT 1 FROM project_members x WHERE x.project_id = p.id AND x.user_id <> $1)",
+    )
+    .bind(&user_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Some(project) = stranded {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("The user is the only owner of project \"{project}\" which has other members; make someone else owner first"),
+        ));
+    }
+
+    // Projects only this user belongs to go with the account.
+    sqlx::query(
+        "DELETE FROM projects WHERE id IN (SELECT project_id FROM project_members WHERE user_id = $1)          AND NOT EXISTS (SELECT 1 FROM project_members x WHERE x.project_id = projects.id AND x.user_id <> $1)",
+    )
+    .bind(&user_id)
+    .execute(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
     sqlx::query("DELETE FROM users WHERE id = $1")
         .bind(&user_id)
         .execute(&state.db)

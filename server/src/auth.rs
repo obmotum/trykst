@@ -53,9 +53,10 @@ pub async fn storage_stats(
     let user_id = jar.get("session_user_id").map(|c| c.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, "Not logged in".to_string()))?;
 
-    // LENGTH() returns byte count for both BYTEA (Postgres) and BLOB (SQLite)
+    // Documents the user created: text files count as documents, uploads as files.
+    // LENGTH() returns byte count for both BYTEA (Postgres) and BLOB (SQLite).
     let docs_size: (i64,) = sqlx::query_as(
-        "SELECT COALESCE(SUM(LENGTH(content)), 0) FROM documents WHERE owner_id = $1"
+        "SELECT COALESCE(SUM(LENGTH(n.content)), 0) FROM nodes n JOIN documents d ON d.id = n.document_id          WHERE d.created_by = $1 AND n.kind = 'text'"
     )
     .bind(&user_id)
     .fetch_one(&state.db)
@@ -63,7 +64,7 @@ pub async fn storage_stats(
     .unwrap_or((0,));
 
     let files_size: (i64,) = sqlx::query_as(
-        "SELECT COALESCE(SUM(LENGTH(data)), 0) FROM files WHERE owner_id = $1"
+        "SELECT COALESCE(SUM(LENGTH(n.content)), 0) FROM nodes n JOIN documents d ON d.id = n.document_id          WHERE d.created_by = $1 AND n.kind = 'binary'"
     )
     .bind(&user_id)
     .fetch_one(&state.db)
