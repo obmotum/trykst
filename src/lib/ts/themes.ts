@@ -104,12 +104,25 @@ export function getThemeExtension(themeName: keyof typeof themes, isDark: boolea
         },
 
         ".cm-activeLineGutter": {
-            backgroundColor: colors.selection
+            backgroundColor: colors.selection,
+            color: colors.text,
+            fontWeight: "600"
+        },
+        ".cm-foldGutter .cm-gutterElement": {
+            cursor: "pointer",
+            padding: "0 4px",
+            color: colors.comment
+        },
+        ".cm-foldGutter .cm-gutterElement:hover": {
+            color: colors.text
         },
         ".cm-foldPlaceholder": {
-            backgroundColor: "transparent",
+            backgroundColor: colors.selection,
             border: "none",
-            color: "#ddd"
+            borderRadius: "3px",
+            padding: "0 6px",
+            margin: "0 4px",
+            color: colors.comment
         },
         ".cm-tooltip": {
             border: "none",

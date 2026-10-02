@@ -66,7 +66,10 @@
 		return 'mdi:file-outline';
 	}
 
+	/** Focuses the name field with the name preselected (without the extension), ready to type over. */
 	function focusAndSelect(el: HTMLInputElement) {
+		// The binding fills the field only after this runs; without the value there is nothing to select.
+		el.value = inputValue;
 		el.focus();
 		const dot = el.value.lastIndexOf('.');
 		el.setSelectionRange(0, dot > 0 ? dot : el.value.length);

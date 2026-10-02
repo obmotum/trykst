@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
-	import { EditorView, lineNumbers, keymap, type BlockInfo } from '@codemirror/view';
+	import { EditorView, lineNumbers, highlightActiveLineGutter, keymap, type BlockInfo } from '@codemirror/view';
 	import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 	import { autocompletion, snippetCompletion, type CompletionContext } from '@codemirror/autocomplete';
 	import { typst, TypstParser, typstHighlight } from 'codemirror-lang-typst';
@@ -9,6 +9,7 @@
 	import { toml } from '@codemirror/legacy-modes/mode/toml';
 	import { yCollab } from 'y-codemirror.next';
 	import { getThemeExtension } from '../ts/themes';
+	import { folding, indentedWrapping } from '../ts/editor-extensions';
 	import { themeStore, darkModeStore, editorViewStore, editorErrors, triggerLspReconnect } from '../ts/store';
 	import { page } from '$app/stores';
 	import { LSPClient, languageServerExtensions } from "@codemirror/lsp-client";
@@ -214,6 +215,8 @@
 			doc: activeText.toString(),
 			extensions: [
 				lineNumbers({ domEventHandlers: { mousedown: selectLinesFromGutter } }),
+				highlightActiveLineGutter(),
+				folding(),
 				lintGutter(),
 				history(),
 				keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab] as any),
@@ -222,7 +225,7 @@
 				...completionExtensions,
 				themeCompartment.of(getThemeExtension(currentTheme as any, isDark)),
 				lspCompartment.of([]),
-				EditorView.lineWrapping,
+				indentedWrapping(),
 				EditorView.theme({
 					'&': { height: '100%', fontSize: '14px' },
 					'.cm-scroller': { overflow: 'auto' },
