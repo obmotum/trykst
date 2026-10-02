@@ -1,11 +1,37 @@
-import { RangeSetBuilder, countColumn, type EditorState, type Extension } from '@codemirror/state';
+import { RangeSetBuilder, countColumn, type EditorState, type Extension, type Text } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, keymap, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { codeFolding, foldGutter, foldKeymap, foldService } from '@codemirror/language';
 
 const HEADING = /^(=+)\s/;
+const BLANK = -1;
 
-function indentOf(state: EditorState, text: string): number {
-	return countColumn(text, state.tabSize, text.search(/\S|$/));
+/** Per line (1-based): heading level (0 = none) and indentation (BLANK for empty lines). */
+interface Outline {
+	heading: Uint8Array;
+	indent: Int32Array;
+}
+
+// The fold gutter asks about every visible line after every change. One pass
+// per document version answers all of them, instead of rescanning the text
+// below each line.
+const outlines = new WeakMap<Text, Outline>();
+
+function outlineOf(state: EditorState): Outline {
+	const doc = state.doc;
+	let outline = outlines.get(doc);
+	if (!outline) {
+		outline = { heading: new Uint8Array(doc.lines + 1), indent: new Int32Array(doc.lines + 1) };
+		let n = 1;
+		for (const text of doc.iterLines()) {
+			const start = text.search(/\S/);
+			outline.indent[n] = start < 0 ? BLANK : countColumn(text, state.tabSize, start);
+			const heading = start === 0 ? HEADING.exec(text) : null;
+			outline.heading[n] = heading ? Math.min(heading[1].length, 255) : 0;
+			n++;
+		}
+		outlines.set(doc, outline);
+	}
+	return outline;
 }
 
 /**
@@ -15,28 +41,24 @@ function indentOf(state: EditorState, text: string): number {
  */
 function foldRange(state: EditorState, lineStart: number): { from: number; to: number } | null {
 	const doc = state.doc;
-	const line = doc.lineAt(lineStart);
-	if (!line.text.trim()) return null;
+	const { heading, indent } = outlineOf(state);
+	const first = doc.lineAt(lineStart).number;
+	if (indent[first] === BLANK) return null;
 
-	let end = line.number;
-	const heading = HEADING.exec(line.text);
-	if (heading) {
-		for (let n = line.number + 1; n <= doc.lines; n++) {
-			const text = doc.line(n).text;
-			const other = HEADING.exec(text);
-			if (other && other[1].length <= heading[1].length) break;
-			if (text.trim()) end = n;
+	let end = first;
+	if (heading[first]) {
+		for (let n = first + 1; n <= doc.lines; n++) {
+			if (heading[n] && heading[n] <= heading[first]) break;
+			if (indent[n] !== BLANK) end = n;
 		}
 	} else {
-		const indent = indentOf(state, line.text);
-		for (let n = line.number + 1; n <= doc.lines; n++) {
-			const text = doc.line(n).text;
-			if (!text.trim()) continue;
-			if (indentOf(state, text) <= indent) break;
+		for (let n = first + 1; n <= doc.lines; n++) {
+			if (indent[n] === BLANK) continue;
+			if (indent[n] <= indent[first]) break;
 			end = n;
 		}
 	}
-	return end > line.number ? { from: line.to, to: doc.line(end).to } : null;
+	return end > first ? { from: doc.line(first).to, to: doc.line(end).to } : null;
 }
 
 /** Fold markers next to the line numbers; Ctrl+Shift+[ and ] fold and unfold. */
