@@ -20,25 +20,30 @@ Trykst is a fork of [TypstDrive](https://github.com/SirBlobby/TypstDrive) by Sir
 - **OIDC only, seamless SSO**: authorization code flow with PKCE. Visitors without a session are sent straight to the IdP and come back to the page they asked for.
 - **Just-in-time accounts**: users are created on first sign-in and keyed by `(issuer, subject)`; name and email are kept in sync with the IdP.
 - **Roles from the IdP**: admin rights, access restriction and guest status come from a roles claim or from Keycloak Organizations membership.
-- **Guests for external users**: guests only see what was shared with them and cannot create documents, spaces, packages or API keys, nor browse the directory.
+- **Guests for external users**: guests work in the projects they were added to. They cannot create projects or API keys, nor browse the directory.
 - **Central logout**: signing out ends the IdP session too (RP-initiated logout), and back-channel logout ends Trykst sessions the moment the IdP revokes them.
 - **Server-side sessions** with a maximum age; a re-login at the IdP is silent while its session lasts.
 - **Always-current profiles**: name, email, picture and roles come from the IdP at sign-in. When an update or a change to the role settings affects them, existing sessions are renewed automatically, silently while the IdP session lasts.
 
+### Projects, documents and files
+- **Projects** are the unit of collaboration: a project holds documents and has members. Everything in Trykst lives in a project.
+- **Documents** compile to one output. Each document has its own files: Typst sources, images, fonts, bibliographies, organized in folders that can be nested freely.
+- **File tree** with drag and drop: move files and folders, drop files from the desktop into a folder to upload them, rename in place. One file is the main file the document is compiled from.
+
 ### Sharing
+- **Project members** with three roles: owners manage members and the project, editors create and edit documents, viewers read. A project can have several owners and always keeps at least one.
 - **People picker**: find colleagues by name, email or domain in the IdP directory, including people who have never signed in; shows avatar, organization and email.
-- **Invite before first login**: sharing with someone creates a placeholder account that is linked on their first sign-in.
-- **Roles per document**: editor or viewer, plus link sharing for anyone with the link.
+- **Add people before their first login**: adding someone creates a placeholder account that is linked on their first sign-in.
+- **Link sharing per document**: off, viewer or editor for anyone with the link, without signing in.
 
 ### Editing
-- **Real-time collaboration**: Yjs and CodeMirror 6 with live cursors.
-- **Instant preview**: Typst compiled to SVG on the fly, with zoom and a collapsible preview pane.
-- **Spaces**: multi-file projects with their own `typst.toml`, `.typ`, `.bib` and asset files, a file tree and per-file collaboration.
-- **Instance-local packages**: publish a Space as a versioned Typst package, importable everywhere as `@trykst/<name>:<version>`.
-- **Comments and version history**.
+- **Real-time collaboration**: Yjs and CodeMirror 6 with live cursors, per file.
+- **Instant preview**: Typst compiled to SVG on the fly, with zoom and a collapsible preview pane. Errors name the file they occur in.
+- **Packages**: publish a document with a `typst.toml` as a versioned Typst package. Project packages are importable by the documents of the same project as `@project/<name>:<version>`; admins can publish instance-wide packages as `@trykst/<name>:<version>`.
+- **Comments** on documents and files, and a **version history** that snapshots the whole document with all its files.
 - **Export** to PDF, PNG, SVG, HTML, Markdown, Word or LaTeX (Pandoc).
 - **Presentation mode** with slide controls and an annotation overlay.
-- **Custom fonts and images**, uploaded per account or per document.
+- **Custom fonts and images**, uploaded into the document that uses them.
 - **Render API**: `POST /v1/render` with API keys, documented at `/api-docs`.
 - **Themes**: Catppuccin, Arch Linux, Cerberus, light and dark.
 
@@ -123,9 +128,11 @@ External users sign in through Keycloak like everyone else, via an organization 
 
 Other providers work through the same standard settings; see `OIDC_SUBJECT_CLAIM` for Entra ID.
 
-## Fonts and images
+## Files, fonts and images
 
-Upload `.ttf` or `.otf` fonts from the dashboard or the editor toolbar. Trykst reads the family name from the file, registers all its variants and makes them available to the compiler and the `tinymist` language server immediately:
+Fonts and images belong to the document that uses them: upload them into its file tree, by dropping them onto a folder or with the upload button. There are no account-wide or project-wide assets.
+
+Upload `.ttf` or `.otf` fonts anywhere in the document. Trykst reads the family name from the file, registers all its variants and makes them available to the compiler and the `tinymist` language server:
 
 ```typst
 #set text(font: "JetBrains Mono")
@@ -133,12 +140,16 @@ Upload `.ttf` or `.otf` fonts from the dashboard or the editor toolbar. Trykst r
 
 For Google Fonts, extract the ZIP and upload all `.ttf` files at once; a variable font needs only its single file.
 
-Uploaded images are referenced by filename, remote images by URL:
+Files are referenced by their path, relative to the file that uses them or, with a leading `/`, from the document root. Remote images work by URL:
 
 ```typst
-#image("logo.png", width: 50%)
+#include "chapters/introduction.typ"
+#image("figures/logo.png", width: 50%)
+#image("/figures/logo.png", width: 50%)
 #image("https://example.com/logo.png", width: 50%)
 ```
+
+To reuse code or assets across documents, publish them as a package (File → Publish as package) and import it with `#import "@project/<name>:<version>": *`.
 
 ## Local development
 
@@ -152,12 +163,22 @@ Set `CARGO_TARGET_DIR` outside synced folders such as OneDrive; the build direct
 
 The README screenshots are generated by [`tools/screenshots`](tools/screenshots/README.md) against the dev setup.
 
-## Migrating from TypstDrive
+## Upgrading from 0.1.x
 
-- Accounts are matched to IdP identities by verified email on the first sign-in.
-- Packages move from the `typstdrive` to the `trykst` namespace automatically; `#import "@typstdrive/…"` keeps working.
-- Password login, registration, the setup wizard and the desktop sync API are gone.
-- The default database file is now `trykst.db`; point `DATABASE_URL` at your existing file.
+Trykst 0.2 introduced projects and is a **fresh start: data from 0.1.x (or TypstDrive) is not migrated**. Accounts are recreated on the next sign-in; documents, spaces, files and packages are not carried over.
+
+1. Export what you want to keep while still running 0.1.x (File → Download in the editor).
+2. Either point `DATABASE_URL` at a new, empty database, or set `TRYKST_DROP_LEGACY_DATA=true` for one start to **delete all existing data** in the current one. Without either, 0.2 refuses to start on a 0.1.x database and leaves it untouched.
+3. Remove `TRYKST_DROP_LEGACY_DATA` again, sign in, create a project and upload your files.
+
+What changed for users:
+
+- Documents and spaces became documents inside projects; every document can now have several files and folders.
+- Sharing with individual people moved from the document to the project. Link sharing stays per document.
+- Fonts and images are uploaded into a document instead of the account.
+- `#import "@trykst/…"` packages are now published by admins; everyone else publishes `@project/…` packages inside a project. `#import "@typstdrive/…"` still resolves to instance-wide packages.
+
+Compared to TypstDrive, password login, registration, the setup wizard and the desktop sync API are gone as well.
 
 ## Origin and license
 
@@ -168,8 +189,11 @@ Typst is a project of the Typst team; Trykst is not affiliated with or endorsed 
 ## Screenshots
 
 <p align="center">
-  <img src="preview/editor.png" alt="Editor view" width="100%">
+  <img src="preview/editor.png" alt="Document editor with file tree and preview" width="100%">
 </p>
 <p align="center">
-  <img src="preview/dashboard.png" alt="Dashboard view" width="100%">
+  <img src="preview/project.png" alt="A project with its documents" width="100%">
+</p>
+<p align="center">
+  <img src="preview/dashboard.png" alt="Project list" width="100%">
 </p>

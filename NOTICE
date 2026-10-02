@@ -14,8 +14,10 @@ Changes relative to TypstDrive include, among others:
 - Roles, guest users and organizations derived from the identity provider
 - People picker backed by the identity provider's directory; invitations
   for users who have not signed in yet
+- Content restructured into projects with members, documents and per-document
+  file trees; spaces, account-wide files and per-document invitations removed
 - Removed: password login, registration, setup wizard, desktop sync API
-- Renamed to Trykst; local package namespace @trykst (@typstdrive still accepted)
+- Renamed to Trykst; package namespaces @project and @trykst (@typstdrive still accepted)
 
 The individual changes are recorded in the version control history.
 

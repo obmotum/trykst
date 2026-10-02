@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 90" font-family="sans-serif" font-size="12">
+  <g fill="#eef3fb" stroke="#3b6fb6" stroke-width="1.5">
+    <rect x="5" y="25" width="90" height="40" rx="6"/>
+    <rect x="135" y="25" width="90" height="40" rx="6"/>
+    <rect x="265" y="25" width="90" height="40" rx="6"/>
+  </g>
+  <g text-anchor="middle" fill="#1d2b3f">
+    <text x="50" y="49">Browser</text>
+    <text x="180" y="49">Trykst</text>
+    <text x="310" y="49">Identity provider</text>
+  </g>
+  <g stroke="#3b6fb6" stroke-width="1.5" fill="none">
+    <path d="M95 38 H133"/><path d="M127 34 l6 4 -6 4"/>
+    <path d="M225 38 H263"/><path d="M257 34 l6 4 -6 4"/>
+    <path d="M265 54 H227"/><path d="M233 50 l-6 4 6 4"/>
+    <path d="M135 54 H97"/><path d="M103 50 l-6 4 6 4"/>
+  </g>
+</svg>

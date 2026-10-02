@@ -177,7 +177,7 @@ with open("output.png", "wb") as f:
         </h1>
         <button onclick={() => goto('/dashboard')} class="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 px-4 py-2 rounded-lg flex items-center gap-2">
             <Icon icon="mdi:arrow-left" class="text-lg" />
-            Back to Dashboard
+            Projects
         </button>
     </nav>
 
