@@ -260,7 +260,7 @@
 	{/each}
 {/snippet}
 
-<div class="h-full flex flex-col bg-[var(--theme-bg)] border-r border-gray-200 dark:border-white/10">
+<div class="h-full flex flex-col bg-[var(--theme-panel)] border-r border-gray-200 dark:border-white/10">
 	<div class="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-white/10">
 		<span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Files</span>
 		{#if !readOnly}

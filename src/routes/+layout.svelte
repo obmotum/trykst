@@ -27,6 +27,14 @@
 
 	let currentTheme = $derived(themes[$themeStore as keyof typeof themes] || themes['Catppuccin']);
 	let currentColors = $derived($darkModeStore ? currentTheme.dark : currentTheme.light);
+	// The sheet being written on stands out from the panels around it: white on a
+	// tinted desk in light themes, the theme background on a darker desk in dark ones.
+	let surface = $derived($darkModeStore ? currentColors.background : '#ffffff');
+	let panel = $derived(
+		$darkModeStore
+			? `color-mix(in srgb, ${currentColors.background}, black 35%)`
+			: `color-mix(in srgb, ${currentColors.background}, black 4%)`
+	);
 </script>
 
 <svelte:head>
@@ -48,6 +56,8 @@
 			--theme-text: {currentColors.text};
 			--theme-border: {currentColors.selection};
 			--theme-cursor: {currentColors.cursor};
+			--theme-surface: {surface};
+			--theme-panel: {panel};
 		"
 	>
 		{@render children()}

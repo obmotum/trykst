@@ -324,7 +324,7 @@
 					/>
 				</aside>
 
-				<div class="flex flex-col min-h-0 min-w-0 {$previewOpenStore ? 'w-full md:w-1/2 border-r border-gray-200 dark:border-white/10' : 'flex-1'}">
+				<div class="flex flex-col min-h-0 min-w-0 bg-[var(--theme-surface)] {$previewOpenStore ? 'w-full md:w-1/2 border-r border-gray-200 dark:border-white/10' : 'flex-1'}">
 					{#if activeEntry && activeNode}
 						{#key activeId}
 							<Editor
@@ -355,7 +355,7 @@
 			{/if}
 
 			{#if $previewOpenStore || readOnly}
-				<div class="{readOnly ? 'flex-1' : 'w-full md:w-1/2'} min-w-0 relative bg-white/50 dark:bg-black/20 flex flex-col">
+				<div class="{readOnly ? 'flex-1' : 'w-full md:w-1/2'} min-w-0 relative bg-[var(--theme-panel)] flex flex-col">
 					<Preview {svgs} />
 					<ErrorBanner {errors} />
 				</div>

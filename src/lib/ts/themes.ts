@@ -64,7 +64,8 @@ export function getThemeExtension(themeName: keyof typeof themes, isDark: boolea
     const theme = EditorView.theme({
         "&": {
             color: colors.text,
-            backgroundColor: colors.background,
+            // Set by the layout: the editing surface, lighter than the panels around it.
+            backgroundColor: `var(--theme-surface, ${colors.background})`,
             height: "100%",
             fontSize: "14px"
         },
@@ -89,7 +90,7 @@ export function getThemeExtension(themeName: keyof typeof themes, isDark: boolea
             backgroundColor: "#bad0f847"
         },
         ".cm-gutters": {
-            backgroundColor: colors.background,
+            backgroundColor: `var(--theme-surface, ${colors.background})`,
             color: colors.comment,
             border: "none"
         },
