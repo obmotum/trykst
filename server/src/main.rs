@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, post, delete, patch},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use axum_extra::extract::cookie::Key;
@@ -12,23 +12,22 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod access;
 mod admin;
 mod api_keys;
 mod auth;
+mod comments;
 mod compiler;
 mod db;
 mod directory;
-mod docs;
-mod folders;
-mod files;
+mod documents;
 mod handlers;
 mod models;
 mod oidc;
 mod packages;
+mod projects;
 mod public_api;
-mod spaces;
 mod world;
-mod collab;
 
 use compiler::TypstCompiler;
 use handlers::{compile_handler, export_handler, yjs_handler};
@@ -113,36 +112,37 @@ async fn main() {
         .route("/auth/me", get(auth::me))
         .route("/auth/storage", get(auth::storage_stats))
         .route("/directory/search", get(directory::search))
-        .route("/folders", get(folders::list_folders).post(folders::create_folder))
-        .route("/folders/{id}", delete(folders::delete_folder).patch(folders::update_folder))
-        .route("/fonts", get(files::list_fonts))
-        .route("/files", get(files::list_files).post(files::upload_file_global))
-        .route("/files/{id}", delete(files::delete_file).patch(files::update_file))
-        .route("/files/{id}/data", get(files::get_file_data))
-        .route("/docs/shared", get(docs::list_shared_documents))
-        .route("/docs", get(docs::list_documents).post(docs::create_document))
-        .route("/docs/accept-invite", get(collab::accept_invite))
-        .route("/docs/{id}", get(docs::get_document).delete(docs::delete_document).patch(docs::update_document))
-        .route("/docs/{id}/files", post(docs::upload_file))
-        .route("/docs/{id}/collaborators", get(collab::list_collaborators))
-        .route("/docs/{id}/collaborators/{collab_id}", delete(collab::remove_collaborator))
-        .route("/docs/{id}/invite", post(collab::invite_collaborator))
-        .route("/docs/{id}/comments", get(collab::get_comments).post(collab::add_comment))
-        .route("/docs/{id}/versions", get(collab::get_versions).post(collab::create_version))
-        .route("/comments/{id}", patch(collab::update_comment).delete(collab::delete_comment))
+        // Projects and members
+        .route("/projects", get(projects::list_projects).post(projects::create_project))
+        .route("/projects/{id}", get(projects::get_project).patch(projects::update_project).delete(projects::delete_project))
+        .route("/projects/{id}/members", get(projects::list_members).post(projects::add_member))
+        .route("/projects/{id}/members/{user_id}", patch(projects::update_member).delete(projects::remove_member))
+        .route("/projects/{id}/documents", get(documents::list_documents).post(documents::create_document))
+        .route("/projects/{id}/packages", get(packages::list_project_packages))
+        // Documents and their file trees
+        .route("/documents/{id}", get(documents::get_document).patch(documents::update_document).delete(documents::delete_document))
+        .route("/documents/{id}/tree", get(documents::get_tree))
+        .route("/documents/{id}/nodes", post(documents::create_node))
+        .route("/documents/{id}/nodes/{node_id}", patch(documents::update_node).delete(documents::delete_node))
+        .route("/documents/{id}/nodes/{node_id}/content", get(documents::get_node_content))
+        .route("/documents/{id}/upload", post(documents::upload_files))
+        .route("/documents/{id}/entrypoint", put(documents::set_entrypoint))
+        .route("/documents/{id}/fonts", get(documents::list_fonts))
+        .route("/documents/{id}/versions", get(documents::list_versions).post(documents::create_version))
+        .route("/documents/{id}/versions/{version_id}", get(documents::get_version))
+        .route("/documents/{id}/versions/{version_id}/restore", post(documents::restore_version))
+        .route("/documents/{id}/comments", get(comments::list_comments).post(comments::add_comment))
+        .route("/comments/{id}", patch(comments::update_comment).delete(comments::delete_comment))
+        // API keys for the render API
         .route("/keys", get(api_keys::list_keys).post(api_keys::create_key))
         .route("/keys/usage", get(api_keys::get_aggregate_usage))
         .route("/keys/{id}", delete(api_keys::delete_key))
         .route("/keys/{id}/regenerate", post(api_keys::regenerate_key))
-        .route("/spaces/shared", get(spaces::list_shared_spaces))
-        .route("/spaces", get(spaces::list_spaces).post(spaces::create_space))
-        .route("/spaces/{id}", get(spaces::get_space).delete(spaces::delete_space).patch(spaces::update_space))
-        .route("/spaces/{id}/files", get(spaces::list_space_files).post(spaces::create_space_file))
-        .route("/spaces/{id}/files/upload", post(spaces::upload_space_file))
-        .route("/spaces/{id}/files/{fid}", get(spaces::get_space_file).patch(spaces::update_space_file).delete(spaces::delete_space_file))
-        .route("/packages", get(packages::list_packages))
+        // Packages: instance-wide list; project packages are listed per project
+        .route("/packages", get(packages::list_instance_packages))
         .route("/packages/publish", post(packages::publish_package))
-        .route("/packages/{name}", get(packages::list_versions).delete(packages::delete_package));
+        .route("/packages/{id}", delete(packages::delete_package))
+        .route("/packages/{id}/versions", get(packages::list_versions));
 
 
     let v1_routes = Router::new()

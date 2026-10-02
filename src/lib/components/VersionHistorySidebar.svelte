@@ -2,108 +2,145 @@
 	import { onMount } from 'svelte';
 	import Icon from '@iconify/svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
-	import { text } from '../ts/yjs-setup';
+	import { api, formatDateTime } from '../ts/api';
 
-	let { docId, onClose } = $props<{ docId: string, onClose: () => void }>();
+	// A version is a snapshot of the whole document: every folder and file.
+	let {
+		docId,
+		canSave = false,
+		canRestore = false,
+		onRestored,
+		onClose
+	}: {
+		docId: string;
+		canSave?: boolean;
+		canRestore?: boolean;
+		onRestored: () => void;
+		onClose: () => void;
+	} = $props();
 
-	type DocumentVersion = {
+	type Version = {
 		id: string;
-		document_id: string;
-		user_id: string;
-		content: string;
+		user_id: string | null;
+		label: string | null;
 		created_at: string;
-		author_name?: string;
+		author_name?: string | null;
 		author_avatar_url?: string | null;
 	};
+	type VersionFile = { path: string; kind: string; content: string | null };
+	type VersionDetail = { entrypoint: string | null; folders: string[]; files: VersionFile[] };
 
-	let versions = $state<DocumentVersion[]>([]);
+	let versions = $state<Version[]>([]);
 	let loading = $state(true);
 	let error = $state('');
-	let previewVersion = $state<DocumentVersion | null>(null);
+	let label = $state('');
+	let saving = $state(false);
+	let restoringId = $state<string | null>(null);
+
+	let preview = $state<{ version: Version; detail: VersionDetail } | null>(null);
+	let previewPath = $state('');
+	let previewFile = $derived(preview?.detail.files.find((f) => f.path === previewPath));
 
 	async function fetchVersions() {
-		loading = true;
 		try {
-			const res = await fetch(`/api/docs/${docId}/versions`);
-			if (!res.ok) throw new Error('Failed to load versions');
-			versions = await res.json();
-		} catch (e: any) {
-			error = e.message;
-		} finally {
-			loading = false;
+			versions = await api<Version[]>('GET', `/api/documents/${docId}/versions`);
+			error = '';
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load versions';
+		}
+		loading = false;
+	}
+
+	async function saveVersion(e: Event) {
+		e.preventDefault();
+		saving = true;
+		try {
+			await api('POST', `/api/documents/${docId}/versions`, { label: label.trim() || null });
+			label = '';
+			await fetchVersions();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to save the version';
+		}
+		saving = false;
+	}
+
+	async function openPreview(version: Version) {
+		try {
+			const detail = await api<VersionDetail>('GET', `/api/documents/${docId}/versions/${version.id}`);
+			detail.files.sort((a, b) => a.path.localeCompare(b.path));
+			previewPath = detail.entrypoint ?? detail.files.find((f) => f.kind === 'text')?.path ?? '';
+			preview = { version, detail };
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load the version';
 		}
 	}
 
-	function restoreVersion(version: DocumentVersion) {
-		if (!text) return;
-		if (!confirm('Are you sure you want to restore this version? This will overwrite the current document.')) return;
-		
-		const currentLength = text.length;
-		text.delete(0, currentLength);
-		text.insert(0, version.content);
-		previewVersion = null;
-		onClose();
+	async function restoreVersion(version: Version) {
+		if (!confirm('Restore this version? All files of the document are replaced by the files of this version. Save the current state as a version first if you want to keep it.')) return;
+		restoringId = version.id;
+		try {
+			await api('POST', `/api/documents/${docId}/versions/${version.id}/restore`);
+			preview = null;
+			onRestored();
+			onClose();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to restore the version';
+		}
+		restoringId = null;
 	}
 
-	function formatDate(dateStr: string) {
-		return new Date(dateStr).toLocaleString(undefined, {
-			month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
-		});
-	}
-
-	onMount(() => {
-		fetchVersions();
-	});
+	onMount(fetchVersions);
 </script>
 
-<div class="fixed right-0 top-0 bottom-0 w-80 bg-[var(--theme-bg)] backdrop-blur-xl border-l shadow-2xl flex flex-col z-[70] transform transition-transform duration-300 border-[var(--theme-border)]">
-	<div class="flex items-center justify-between px-4 py-3 border-b bg-gray-50/50 bg-[var(--theme-bg)] text-[var(--theme-text)] border-[var(--theme-border)]">
+<div class="fixed right-0 top-0 bottom-0 w-80 bg-[var(--theme-bg)] text-[var(--theme-text)] border-l shadow-2xl flex flex-col z-[70] border-[var(--theme-border)]">
+	<div class="flex items-center justify-between px-4 py-3 border-b border-[var(--theme-border)]">
 		<div class="flex items-center gap-2">
 			<Icon icon="mdi:history" class="text-lg" />
-			<h2 class="text-sm font-semibold text-[var(--theme-text)]">Version History</h2>
+			<h2 class="text-sm font-semibold">Version history</h2>
 			<span class="text-[10px] font-bold px-2 py-0.5 rounded-full">{versions.length}</span>
 		</div>
-		<button onclick={onClose} class="p-1.5 hover:text-gray-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/10 rounded-md transition-colors" title="Close Version History">
+		<button onclick={onClose} class="p-1.5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-md transition-colors" title="Close version history" aria-label="Close version history">
 			<Icon icon="mdi:close" class="text-lg" />
 		</button>
 	</div>
 
-	<div class="flex-1 overflow-y-auto p-4 space-y-4">
+	{#if canSave}
+		<form onsubmit={saveVersion} class="p-3 border-b border-[var(--theme-border)] flex gap-2">
+			<input bind:value={label} maxlength="200" placeholder="Name this version (optional)" aria-label="Version name" class="flex-1 min-w-0 text-sm px-3 py-1.5 rounded-lg border border-[var(--theme-border)] bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+			<button type="submit" disabled={saving} class="flex-shrink-0 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-60">{saving ? 'Saving...' : 'Save'}</button>
+		</form>
+	{/if}
+
+	<div class="flex-1 overflow-y-auto p-4 space-y-3">
+		{#if error}
+			<div class="text-red-500 text-sm p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-900/30" role="alert">{error}</div>
+		{/if}
 		{#if loading}
-			<div class="flex justify-center items-center h-full">
-				<Icon icon="mdi:loading" class="animate-spin text-2xl" />
-			</div>
-		{:else if error}
-			<div class="text-red-500 text-sm text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-900/30">
-				{error}
-			</div>
+			<div class="flex justify-center py-8"><Icon icon="mdi:loading" class="animate-spin text-2xl" /></div>
 		{:else if versions.length === 0}
-			<div class="flex flex-col items-center justify-center h-full space-y-2">
+			<div class="flex flex-col items-center justify-center py-12 space-y-2">
 				<Icon icon="mdi:history" class="text-4xl opacity-50" />
 				<p class="text-sm">No versions saved yet</p>
 			</div>
 		{:else}
-			{#each versions as version}
-				<div class="group flex flex-col gap-2 p-3 border rounded-xl shadow-sm hover:shadow-md transition-all bg-[var(--theme-bg)] text-[var(--theme-text)] border-[var(--theme-border)]">
-					<div class="flex justify-between items-start">
-						<div class="flex items-center gap-2">
-							<Avatar name={version.author_name} url={version.author_avatar_url} seed={version.user_id} size={24} />
-							<div>
-								<p class="text-xs font-semibold text-[var(--theme-text)]">{version.author_name || 'Anonymous'}</p>
-								<p class="text-[10px]">{formatDate(version.created_at)}</p>
-							</div>
+			{#each versions as version (version.id)}
+				<div class="flex flex-col gap-2 p-3 border rounded-xl shadow-sm border-[var(--theme-border)]">
+					<div class="flex items-center gap-2">
+						<Avatar name={version.author_name ?? undefined} url={version.author_avatar_url} seed={version.user_id ?? version.id} size={24} />
+						<div class="min-w-0">
+							<p class="text-xs font-semibold truncate">{version.label || 'Unnamed version'}</p>
+							<p class="text-[10px] opacity-70 truncate">{version.author_name || 'Unknown'} · {formatDateTime(version.created_at)}</p>
 						</div>
 					</div>
-					
-					<div class="flex gap-2 mt-2">
-						<button onclick={() => previewVersion = version} class="flex-1 px-3 py-1.5 hover:bg-gray-200 dark:hover:bg-white/20 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5">
-							<Icon icon="mdi:eye" class="text-sm" />
-							Preview
+					<div class="flex gap-2">
+						<button onclick={() => openPreview(version)} class="flex-1 px-3 py-1.5 hover:bg-gray-200 dark:hover:bg-white/20 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5">
+							<Icon icon="mdi:eye" class="text-sm" /> Files
 						</button>
-						<button onclick={() => restoreVersion(version)} class="flex-1 px-3 py-1.5 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:bg-purple-900/20 dark:text-purple-400 dark:hover:bg-purple-900/40 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5">
-							<Icon icon="mdi:restore" class="text-sm" />
-							Restore
-						</button>
+						{#if canRestore}
+							<button onclick={() => restoreVersion(version)} disabled={restoringId === version.id} class="flex-1 px-3 py-1.5 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:bg-purple-900/20 dark:text-purple-400 dark:hover:bg-purple-900/40 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60">
+								<Icon icon={restoringId === version.id ? 'mdi:loading' : 'mdi:restore'} class="text-sm {restoringId === version.id ? 'animate-spin' : ''}" /> Restore
+							</button>
+						{/if}
 					</div>
 				</div>
 			{/each}
@@ -111,32 +148,46 @@
 	</div>
 </div>
 
-{#if previewVersion}
-	<div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 transition-opacity" role="presentation" onclick={() => previewVersion = null} onkeydown={(e) => { if (e.key === "Escape") previewVersion = null; }}>
-		<div class="bg-[var(--theme-bg)] backdrop-blur-xl rounded-2xl shadow-2xl border border-[var(--theme-border)] w-full max-w-4xl h-[80vh] flex flex-col transform transition-all" role="dialog" tabindex="-1" aria-modal="true" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+{#if preview}
+	<div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4" role="presentation" onclick={() => (preview = null)}>
+		<div class="bg-[var(--theme-bg)] text-[var(--theme-text)] rounded-2xl shadow-2xl border border-[var(--theme-border)] w-full max-w-5xl h-[80vh] flex flex-col" role="dialog" tabindex="-1" aria-modal="true" aria-label="Files of this version" onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === 'Escape') preview = null; }}>
 			<div class="flex items-center justify-between p-4 border-b border-[var(--theme-border)]">
-				<div class="flex items-center gap-3">
-					<Icon icon="mdi:eye" class="text-blue-500 text-xl" />
-					<h3 class="text-lg font-semibold text-[var(--theme-text)]">Previewing Version</h3>
-					<span class="text-sm">{formatDate(previewVersion.created_at)}</span>
+				<div class="flex items-center gap-3 min-w-0">
+					<Icon icon="mdi:history" class="text-blue-500 text-xl flex-shrink-0" />
+					<h3 class="text-lg font-semibold truncate">{preview.version.label || 'Unnamed version'}</h3>
+					<span class="text-sm opacity-70 flex-shrink-0">{formatDateTime(preview.version.created_at)}</span>
 				</div>
-				<button onclick={() => previewVersion = null} class="p-1.5 hover:text-gray-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/10 rounded-md transition-colors" title="Close Preview">
+				<button onclick={() => (preview = null)} class="p-1.5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-md transition-colors" title="Close" aria-label="Close">
 					<Icon icon="mdi:close" class="text-xl" />
 				</button>
 			</div>
-			
-			<div class="flex-1 overflow-auto p-6 bg-gray-50/50 bg-[var(--theme-bg)] text-[var(--theme-text)]">
-				<pre class="text-sm font-mono whitespace-pre-wrap word-break-break-word">{previewVersion.content}</pre>
+
+			<div class="flex-1 flex min-h-0">
+				<div class="w-60 flex-shrink-0 border-r border-[var(--theme-border)] overflow-y-auto py-1">
+					{#each preview.detail.files as file (file.path)}
+						<button onclick={() => (previewPath = file.path)} class="w-full text-left px-3 py-1.5 text-sm font-mono truncate {previewPath === file.path ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300' : 'hover:bg-gray-100 dark:hover:bg-white/5'}" title={file.path}>
+							{file.path}{#if file.path === preview.detail.entrypoint}<Icon icon="mdi:star" class="inline text-amber-500 text-xs ml-1" />{/if}
+						</button>
+					{/each}
+				</div>
+				<div class="flex-1 overflow-auto p-5 min-w-0">
+					{#if previewFile?.kind === 'text'}
+						<pre class="text-sm font-mono whitespace-pre-wrap break-words">{previewFile.content}</pre>
+					{:else if previewFile}
+						<p class="text-sm opacity-70">{previewFile.path} is not a text file. It is restored together with the version.</p>
+					{:else}
+						<p class="text-sm opacity-70">Select a file.</p>
+					{/if}
+				</div>
 			</div>
-			
-			<div class="p-4 border-t flex justify-end gap-3 bg-white/50 rounded-b-2xl border-[var(--theme-border)]">
-				<button onclick={() => previewVersion = null} class="px-4 py-2 text-sm font-medium hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors">
-					Close
-				</button>
-				<button onclick={() => restoreVersion(previewVersion!)} class="bg-purple-600 hover:bg-purple-700 px-5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2">
-					<Icon icon="mdi:restore" class="text-lg" />
-					Restore This Version
-				</button>
+
+			<div class="p-4 border-t border-[var(--theme-border)] flex justify-end gap-3">
+				<button onclick={() => (preview = null)} class="px-4 py-2 text-sm font-medium hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors">Close</button>
+				{#if canRestore}
+					<button onclick={() => restoreVersion(preview!.version)} class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2">
+						<Icon icon="mdi:restore" class="text-lg" /> Restore this version
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>

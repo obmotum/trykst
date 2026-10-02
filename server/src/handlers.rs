@@ -1,21 +1,27 @@
 use axum::{
-    extract::{Path, State, Multipart},
+    extract::{Multipart, Path, State},
     http::{header, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Json,
 };
+use axum_extra::extract::cookie::SignedCookieJar;
+use futures_util::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
-use yrs_axum::ws::AxumSink;
-use yrs_axum::broadcast::BroadcastGroup;
 use yrs::sync::Awareness;
-use yrs::{Doc, ReadTxn, Transact, Update};
 use yrs::updates::decoder::Decode;
-use futures_util::stream::{StreamExt, Stream};
-use crate::AppState;
-use crate::models::Document;
+use yrs::{Doc, ReadTxn, Transact, Update};
+use yrs_axum::broadcast::BroadcastGroup;
+use yrs_axum::ws::AxumSink;
 
+use crate::access::{db_err, not_found, require_document, require_user, session_user, ApiError, Role};
+use crate::compiler::{Diagnostics, DocumentStats, PreviewPage, ProjectInput};
+use crate::documents::{assemble_document, document_files, room_key};
+use crate::AppState;
+
+/// Drops document updates sent by read-only participants of a room.
 pub struct ViewerFilterStream {
     inner: futures_util::stream::SplitStream<axum::extract::ws::WebSocket>,
     is_viewer: bool,
@@ -48,26 +54,33 @@ impl Stream for ViewerFilterStream {
     }
 }
 
+
 #[derive(Deserialize)]
 pub struct CompileRequest {
+    /// The document to compile. Without it, `text` is compiled on its own.
+    pub document_id: Option<String>,
     #[serde(default)]
     pub text: Option<String>,
-    pub document_id: Option<String>,
-    pub space_id: Option<String>,
+    /// Unsaved text by path, taking precedence over the stored files.
     #[serde(default)]
-    pub files: Option<std::collections::HashMap<String, String>>,
+    pub files: Option<HashMap<String, String>>,
+    /// Hashes of the preview pages the client already has; those are not sent again.
+    #[serde(default)]
+    pub known: Vec<String>,
 }
 
-use crate::compiler::{Diagnostics, DocumentStats, ProjectInput};
-
-fn map_diagnostics(
-    diags: Diagnostics,
-) -> Vec<Diagnostic> {
+fn map_diagnostics(diags: Diagnostics) -> Vec<Diagnostic> {
     diags
         .into_iter()
         .map(|(d, range)| Diagnostic {
             message: d.message.to_string(),
             severity: format!("{:?}", d.severity),
+            // Files of the document only; errors inside packages have no path here.
+            path: d
+                .span
+                .id()
+                .filter(|id| matches!(id.root(), typst::syntax::VirtualRoot::Project))
+                .map(|id| id.vpath().get_without_slash().replace('\\', "/")),
             from: range.as_ref().map(|r| r.start),
             to: range.as_ref().map(|r| r.end),
         })
@@ -76,7 +89,7 @@ fn map_diagnostics(
 
 #[derive(Serialize)]
 pub struct CompileResponse {
-    pub svgs: Option<Vec<String>>,
+    pub pages: Option<Vec<PreviewPage>>,
     pub errors: Option<Vec<Diagnostic>>,
     pub stats: Option<DocumentStats>,
 }
@@ -85,402 +98,218 @@ pub struct CompileResponse {
 pub struct Diagnostic {
     pub message: String,
     pub severity: String,
+    /// The file `from` and `to` refer to, relative to the document root.
+    pub path: Option<String>,
     pub from: Option<usize>,
     pub to: Option<usize>,
 }
 
+fn error_response(message: String) -> CompileResponse {
+    CompileResponse {
+        pages: None,
+        errors: Some(vec![Diagnostic { message, severity: "Error".to_string(), path: None, from: None, to: None }]),
+        stats: None,
+    }
+}
+
+/// Real-time collaboration on one text file of a document. Room id:
+/// `doc:<document_id>:<node_id>`. Without access to the document there is no
+/// room at all (404), so nobody can listen in on other people's edits.
 pub async fn yjs_handler(
     ws: axum::extract::ws::WebSocketUpgrade,
     Path(id): Path<String>,
     State(state): State<AppState>,
-    jar: axum_extra::extract::cookie::SignedCookieJar,
-) -> impl IntoResponse {
-    let user_id_opt = jar.get("session_user_id").map(|c| c.value().to_string());
+    jar: SignedCookieJar,
+) -> Result<Response, ApiError> {
+    let (doc_id, node_id) = id
+        .strip_prefix("doc:")
+        .and_then(|rest| rest.split_once(':'))
+        .map(|(d, n)| (d.to_string(), n.to_string()))
+        .ok_or_else(|| not_found("Room"))?;
+    let user = session_user(&jar);
+    let access = require_document(&state, &doc_id, user.as_deref(), Role::Viewer).await?;
+    let is_viewer = !access.role.can_write();
 
-    let mut is_viewer = true;
-    let mut initial_content: Option<Vec<u8>> = None;
-    // (table, row_id) the autosave task persists into; None means no persistence.
-    let mut save_target: Option<(&'static str, String)> = None;
-
-    if let Some(rest) = id.strip_prefix("space:") {
-        if let Some((space_id, file_id)) = rest.split_once(':') {
-            if let Some((_space, role)) = crate::spaces::space_role(&state, space_id, &user_id_opt).await {
-                is_viewer = role == "viewer";
-                if let Ok(Some((content,))) = sqlx::query_as::<_, (Option<Vec<u8>>,)>(
-                    "SELECT content FROM space_files WHERE id = $1 AND space_id = $2"
-                )
-                .bind(file_id)
-                .bind(space_id)
-                .fetch_optional(&state.db)
-                .await
-                {
-                    initial_content = content;
-                }
-                save_target = Some(("space_files", file_id.to_string()));
-            }
-        }
-    } else {
-        let doc_info = sqlx::query_as::<_, Document>(
-            "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = $1"
-        )
-        .bind(&id)
-        .fetch_optional(&state.db)
-        .await;
-
-        if let Ok(Some(ref d)) = doc_info {
-            if let Some(uid) = &user_id_opt {
-                if &d.owner_id == uid {
-                    is_viewer = false;
-                } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = $1 AND user_id = $2 AND role = 'editor'")
-                    .bind(&id)
-                    .bind(uid)
-                    .fetch_optional(&state.db)
-                    .await
-                {
-                    is_viewer = false;
-                }
-            }
-            if is_viewer {
-                if let Some(pr) = &d.public_role {
-                    if pr == "editor" {
-                        is_viewer = false;
-                    }
-                }
-            }
-            initial_content = d.content.clone();
-        }
-        save_target = Some(("documents", id.clone()));
-    }
-
-    let mut bcast_map = state.bcast_map.lock().await;
-    let bcast = if let Some(bcast) = bcast_map.get(&id) {
-        bcast.clone()
-    } else {
-        let ydoc = Doc::new();
-
-        if let Some(content) = initial_content {
-            if let Ok(update) = Update::decode_v1(&content) {
-                ydoc.transact_mut().apply_update(update);
-            }
-        }
-
-        let awareness = Arc::new(RwLock::new(Awareness::new(ydoc)));
-        let new_bcast = Arc::new(BroadcastGroup::new(awareness.clone(), 10).await);
-        bcast_map.insert(id.clone(), new_bcast.clone());
-
-        if let Some((table, row_id)) = save_target {
-            let save_db = state.db.clone();
-            let save_awareness = awareness.clone();
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-                loop {
-                    interval.tick().await;
-                    let doc = save_awareness.read().await;
-                    let content = doc.doc().transact().encode_state_as_update_v1(&yrs::StateVector::default());
-                    let query = if table == "space_files" {
-                        "UPDATE space_files SET content = $1 WHERE id = $2"
-                    } else {
-                        "UPDATE documents SET content = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2"
-                    };
-                    let _ = sqlx::query(query)
-                        .bind(content)
-                        .bind(&row_id)
-                        .execute(&save_db)
-                        .await;
-                }
-            });
-        }
-
-        new_bcast
+    let row: Option<(String, Option<Vec<u8>>)> =
+        sqlx::query_as("SELECT kind, content FROM nodes WHERE id = $1 AND document_id = $2")
+            .bind(&node_id)
+            .bind(&doc_id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(db_err)?;
+    let initial_content = match row {
+        Some((kind, content)) if kind == "text" => content,
+        _ => return Err(not_found("File")),
     };
 
-    drop(bcast_map);
+    let key = room_key(&doc_id, &node_id);
+    let mut rooms = state.bcast_map.lock().await;
+    let group = match rooms.get(&key) {
+        Some(group) => group.clone(),
+        None => {
+            let ydoc = Doc::new();
+            if let Some(content) = initial_content {
+                if let Ok(update) = Update::decode_v1(&content) {
+                    ydoc.transact_mut().apply_update(update);
+                }
+            }
+            let awareness = Arc::new(RwLock::new(Awareness::new(ydoc)));
+            let group = Arc::new(BroadcastGroup::new(awareness.clone(), 10).await);
+            rooms.insert(key.clone(), group.clone());
+            spawn_autosave(state.clone(), key.clone(), group.clone(), node_id.clone(), doc_id.clone());
+            group
+        }
+    };
+    drop(rooms);
 
-    ws.on_upgrade(move |socket| async move {
+    Ok(ws.on_upgrade(move |socket| async move {
         let (sink, stream) = socket.split();
         let sink = Arc::new(Mutex::new(AxumSink(sink)));
-
-        let filtered_stream = ViewerFilterStream {
-            inner: stream,
-            is_viewer,
-        };
-
-        let sub = bcast.subscribe(sink, filtered_stream);
-        match sub.completed().await {
-            Ok(_) => println!("broadcasting for channel finished successfully"),
-            Err(e) => eprintln!("broadcasting for channel finished abruptly: {}", e),
+        let stream = ViewerFilterStream { inner: stream, is_viewer };
+        let subscription = group.subscribe(sink, stream);
+        if let Err(e) = subscription.completed().await {
+            tracing::debug!("collaboration connection ended: {e}");
         }
-    })
+    }))
+}
+
+/// Persists a room every few seconds. Stops once the room is closed or replaced
+/// (file deleted, re-uploaded or version restored), so stale content is never
+/// written over newer data.
+fn spawn_autosave(state: AppState, key: String, group: Arc<BroadcastGroup>, node_id: String, doc_id: String) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        let mut last_saved: Option<Vec<u8>> = None;
+        loop {
+            interval.tick().await;
+            let still_open = state
+                .bcast_map
+                .lock()
+                .await
+                .get(&key)
+                .is_some_and(|current| Arc::ptr_eq(current, &group));
+            if !still_open {
+                break;
+            }
+            let content = {
+                let awareness = group.awareness().read().await;
+                let content = awareness.doc().transact().encode_state_as_update_v1(&yrs::StateVector::default());
+                content
+            };
+            if last_saved.as_ref() == Some(&content) {
+                continue;
+            }
+            let now = crate::access::now();
+            let saved = sqlx::query("UPDATE nodes SET content = $1, updated_at = $2 WHERE id = $3")
+                .bind(&content)
+                .bind(&now)
+                .bind(&node_id)
+                .execute(&state.db)
+                .await;
+            if saved.is_ok() {
+                // The first save after a (re)start only persists; it is not an edit.
+                if last_saved.is_some() {
+                    let _ = sqlx::query("UPDATE documents SET updated_at = $1 WHERE id = $2")
+                        .bind(&now)
+                        .bind(&doc_id)
+                        .execute(&state.db)
+                        .await;
+                }
+                last_saved = Some(content);
+            }
+        }
+    });
+}
+
+/// The compile input for a request, and whether the caller may store a thumbnail.
+/// The inner error is a message to show instead of a compile result.
+async fn compile_input(
+    state: &AppState,
+    jar: &SignedCookieJar,
+    payload: &CompileRequest,
+) -> Result<Result<(ProjectInput, bool), String>, ApiError> {
+    let overrides = payload.files.clone().unwrap_or_default();
+    match &payload.document_id {
+        Some(doc_id) => {
+            let user = session_user(jar);
+            let access = require_document(state, doc_id, user.as_deref(), Role::Viewer).await?;
+            match assemble_document(state, &access.doc, &overrides).await {
+                Ok(input) => Ok(Ok((input, access.role.can_write()))),
+                Err((StatusCode::UNPROCESSABLE_ENTITY, message)) => Ok(Err(message)),
+                Err(e) => Err(e),
+            }
+        }
+        None => {
+            require_user(jar)?;
+            Ok(Ok((ProjectInput::single(payload.text.clone().unwrap_or_default(), HashMap::new()), false)))
+        }
+    }
 }
 
 pub async fn compile_handler(
     State(state): State<AppState>,
-    jar: axum_extra::extract::cookie::SignedCookieJar,
+    jar: SignedCookieJar,
     Json(payload): Json<CompileRequest>,
-) -> impl IntoResponse {
-    let mut files_map = std::collections::HashMap::new();
-    let mut can_save_thumbnail = false;
-    let user_id_opt = jar.get("session_user_id").map(|c| c.value().to_string());
+) -> Result<Json<CompileResponse>, ApiError> {
+    let (input, can_save) = match compile_input(&state, &jar, &payload).await? {
+        Ok(v) => v,
+        Err(message) => return Ok(Json(error_response(message))),
+    };
 
-    if let Some(space_id) = &payload.space_id {
-        let (space, role) = match crate::spaces::space_role(&state, space_id, &user_id_opt).await {
-            Some(v) => v,
-            None => {
-                return Json(CompileResponse {
-                    svgs: None,
-                    errors: Some(vec![Diagnostic {
-                        message: "Unauthorized".to_string(),
-                        severity: "Error".to_string(),
-                        from: None,
-                        to: None,
-                    }]),
-                    stats: None,
-                });
-            }
-        };
-
-        let overrides = payload.files.clone().unwrap_or_default();
-        let input = crate::spaces::assemble_project(&state, &space, overrides).await;
-        let can_save = role == "owner" || role == "editor";
-
-        let compiler = state.compiler.lock().await;
-        let result = compiler.compile_svg(input);
-        drop(compiler);
-
-        return match result {
-            Ok((svgs, thumbnail, stats)) => {
-                if can_save {
-                    let _ = sqlx::query("UPDATE spaces SET thumbnail_svg = $1 WHERE id = $2")
-                        .bind(&thumbnail)
-                        .bind(&space.id)
-                        .execute(&state.db)
-                        .await;
-                }
-                Json(CompileResponse {
-                    svgs: Some(svgs),
-                    errors: None,
-                    stats: Some(stats),
-                })
-            }
-            Err(diags) => Json(CompileResponse {
-                svgs: None,
-                errors: Some(map_diagnostics(diags)),
-                stats: None,
-            }),
-        };
-    }
-
-    if let Some(doc_id) = &payload.document_id {
-        if let Ok(doc) = sqlx::query_as::<_, crate::models::Document>(
-            "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = $1"
-        )
-        .bind(doc_id)
-        .fetch_one(&state.db)
-        .await
-        {
-            let mut has_access = false;
-            if let Some(uid) = &user_id_opt {
-                if &doc.owner_id == uid {
-                    has_access = true;
-                    can_save_thumbnail = true;
-                } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = $1 AND user_id = $2")
-                    .bind(doc_id)
-                    .bind(uid)
-                    .fetch_optional(&state.db)
-                    .await
-                {
-                    has_access = true;
-                }
-            }
-
-            if !has_access {
-                if let Some(pr) = &doc.public_role {
-                    if pr == "viewer" || pr == "editor" {
-                        has_access = true;
-                    }
-                }
-            }
-
-            if has_access {
-                if let Ok(files) = sqlx::query_as::<_, (String, Vec<u8>)>("SELECT name, data FROM files WHERE owner_id = $1")
-                    .bind(&doc.owner_id)
-                    .fetch_all(&state.db)
-                    .await
-                {
-                    for (name, data) in files {
-                        files_map.insert(name, data);
-                    }
-                }
-                // Also include files uploaded by collaborators specifically for this document
-                if let Ok(collab_files) = sqlx::query_as::<_, (String, Vec<u8>)>(
-                    "SELECT name, data FROM files WHERE document_id = $1 AND owner_id != $2"
-                )
-                .bind(doc_id)
-                .bind(&doc.owner_id)
-                .fetch_all(&state.db)
-                .await
-                {
-                    for (name, data) in collab_files {
-                        files_map.insert(name, data);
-                    }
-                }
-            }
-        }
-    }
-
+    let known: HashSet<String> = payload.known.iter().cloned().collect();
     let compiler = state.compiler.lock().await;
-    match compiler.compile_svg(ProjectInput::single(payload.text.clone().unwrap_or_default(), files_map)) {
-        Ok((svgs, thumbnail, stats)) => {
-            if let Some(doc_id) = &payload.document_id {
-                if can_save_thumbnail {
-                    let _ = sqlx::query("UPDATE documents SET thumbnail_svg = $1 WHERE id = $2")
-                        .bind(&thumbnail)
-                        .bind(doc_id)
-                        .execute(&state.db)
-                        .await;
-                }
-            }
+    // Compiling can take seconds: let the runtime move other work off this thread.
+    let result = tokio::task::block_in_place(|| compiler.compile_preview(input, &known));
+    drop(compiler);
 
-            Json(CompileResponse {
-                svgs: Some(svgs),
-                errors: None,
-                stats: Some(stats),
-            })
+    Ok(Json(match result {
+        Ok((pages, stats)) => {
+            // The first page is the thumbnail; it only needs saving when it changed.
+            if let (true, Some(doc_id), Some(thumbnail)) =
+                (can_save, &payload.document_id, pages.first().and_then(|p| p.svg.as_ref()))
+            {
+                let _ = sqlx::query("UPDATE documents SET thumbnail_svg = $1 WHERE id = $2")
+                    .bind(thumbnail)
+                    .bind(doc_id)
+                    .execute(&state.db)
+                    .await;
+            }
+            CompileResponse { pages: Some(pages), errors: None, stats: Some(stats) }
         }
-        Err(diags) => {
-            let errors = diags
-                .into_iter()
-                .map(|(d, range)| Diagnostic {
-                    message: d.message.to_string(),
-                    severity: format!("{:?}", d.severity),
-                    from: range.as_ref().map(|r| r.start),
-                    to: range.as_ref().map(|r| r.end),
-                })
-                .collect();
-            Json(CompileResponse {
-                svgs: None,
-                errors: Some(errors),
-                stats: None,
-            })
-        }
-    }
+        Err(diags) => CompileResponse { pages: None, errors: Some(map_diagnostics(diags)), stats: None },
+    }))
 }
 
 pub async fn export_handler(
     State(state): State<AppState>,
-    jar: axum_extra::extract::cookie::SignedCookieJar,
+    jar: SignedCookieJar,
     Path(format): Path<String>,
     Json(payload): Json<CompileRequest>,
-) -> impl IntoResponse {
-    let mut files_map = std::collections::HashMap::new();
-    let user_id_opt = jar.get("session_user_id").map(|c| c.value().to_string());
-
-    if let Some(doc_id) = &payload.document_id {
-        if let Ok(doc) = sqlx::query_as::<_, crate::models::Document>(
-            "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = $1"
-        )
-        .bind(doc_id)
-        .fetch_one(&state.db)
-        .await
-        {
-            let mut has_access = false;
-            if let Some(uid) = &user_id_opt {
-                if &doc.owner_id == uid {
-                    has_access = true;
-                } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = $1 AND user_id = $2")
-                    .bind(doc_id)
-                    .bind(uid)
-                    .fetch_optional(&state.db)
-                    .await
-                {
-                    has_access = true;
-                }
-            }
-            if !has_access {
-                if let Some(pr) = &doc.public_role {
-                    if pr == "viewer" || pr == "editor" {
-                        has_access = true;
-                    }
-                }
-            }
-
-            if has_access {
-                if let Ok(files) = sqlx::query_as::<_, (String, Vec<u8>)>("SELECT name, data FROM files WHERE owner_id = $1")
-                    .bind(&doc.owner_id)
-                    .fetch_all(&state.db)
-                    .await
-                {
-                    for (name, data) in files {
-                        files_map.insert(name, data);
-                    }
-                }
-                if let Ok(collab_files) = sqlx::query_as::<_, (String, Vec<u8>)>(
-                    "SELECT name, data FROM files WHERE document_id = $1 AND owner_id != $2"
-                )
-                .bind(doc_id)
-                .bind(&doc.owner_id)
-                .fetch_all(&state.db)
-                .await
-                {
-                    for (name, data) in collab_files {
-                        files_map.insert(name, data);
-                    }
-                }
-            }
-        }
-    }
-
-    let input = if let Some(space_id) = &payload.space_id {
-        match crate::spaces::space_role(&state, space_id, &user_id_opt).await {
-            Some((space, _)) => {
-                let overrides = payload.files.clone().unwrap_or_default();
-                crate::spaces::assemble_project(&state, &space, overrides).await
-            }
-            None => return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response(),
-        }
-    } else {
-        ProjectInput::single(payload.text.clone().unwrap_or_default(), files_map)
+) -> Result<Response, ApiError> {
+    let input = match compile_input(&state, &jar, &payload).await? {
+        Ok((input, _)) => input,
+        Err(message) => return Ok((StatusCode::UNPROCESSABLE_ENTITY, message).into_response()),
     };
-
     let compiler = state.compiler.lock().await;
 
-    match format.as_str() {
+    Ok(match format.as_str() {
         "pdf" => match compiler.export_pdf(input) {
-            Ok(bytes) => (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, "application/pdf")],
-                bytes,
-            )
-                .into_response(),
+            Ok(bytes) => ([(header::CONTENT_TYPE, "application/pdf")], bytes).into_response(),
             Err(_) => (StatusCode::BAD_REQUEST, "Compilation failed").into_response(),
         },
         "png" => match compiler.export_png(input) {
-            Ok(bytes) => (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, "image/png")],
-                bytes,
-            )
-                .into_response(),
+            Ok(bytes) => ([(header::CONTENT_TYPE, "image/png")], bytes).into_response(),
             Err(_) => (StatusCode::BAD_REQUEST, "Compilation failed").into_response(),
         },
         "svg" => match compiler.compile_svg(input) {
             Ok((svgs, _, _)) => {
-                let mut combined = String::new();
-                for svg in svgs {
-                    combined.push_str(&svg);
-                    combined.push('\n');
-                }
-                (
-                    StatusCode::OK,
-                    [(header::CONTENT_TYPE, "image/svg+xml")],
-                    combined.into_bytes(),
-                )
-                    .into_response()
+                let combined: String = svgs.into_iter().map(|svg| svg + "\n").collect();
+                ([(header::CONTENT_TYPE, "image/svg+xml")], combined.into_bytes()).into_response()
             }
             Err(_) => (StatusCode::BAD_REQUEST, "Compilation failed").into_response(),
         },
         _ => (StatusCode::NOT_FOUND, "Format not supported").into_response(),
-    }
+    })
 }
 
 use std::process::Stdio;
@@ -613,62 +442,19 @@ pub async fn pandoc_import_handler(
         .into_response()
 }
 
+
+/// Language server for a document: tinymist runs on a copy of all its files.
 pub async fn lsp_handler(
     ws: axum::extract::ws::WebSocketUpgrade,
     Path(id): Path<String>,
     State(state): State<AppState>,
-    jar: axum_extra::extract::cookie::SignedCookieJar,
-) -> impl IntoResponse {
-    let user_id_opt = jar.get("session_user_id").map(|c| c.value().to_string());
+    jar: SignedCookieJar,
+) -> Result<Response, ApiError> {
+    let user = session_user(&jar);
+    let access = require_document(&state, &id, user.as_deref(), Role::Viewer).await?;
+    let (_, files_map) = document_files(&state, &access.doc, &HashMap::new()).await?;
 
-    let doc = match sqlx::query_as::<_, crate::models::Document>(
-        "SELECT id, owner_id, folder_id, title, content, thumbnail_svg, public_role, created_at, updated_at FROM documents WHERE id = $1"
-    )
-    .bind(&id)
-    .fetch_optional(&state.db)
-    .await
-    {
-        Ok(Some(d)) => d,
-        _ => return (StatusCode::NOT_FOUND, "Document not found").into_response(),
-    };
-
-    let mut has_access = false;
-    if let Some(uid) = &user_id_opt {
-        if &doc.owner_id == uid {
-            has_access = true;
-        } else if let Ok(Some(_)) = sqlx::query_as::<_, (String,)>("SELECT role FROM collaborators WHERE document_id = $1 AND user_id = $2")
-            .bind(&id)
-            .bind(uid)
-            .fetch_optional(&state.db)
-            .await
-        {
-            has_access = true;
-        }
-    }
-    if !has_access {
-        if let Some(pr) = &doc.public_role {
-            if pr == "viewer" || pr == "editor" {
-                has_access = true;
-            }
-        }
-    }
-
-    if !has_access {
-        return (StatusCode::FORBIDDEN, "Forbidden").into_response();
-    }
-
-    let mut files_map = std::collections::HashMap::new();
-    if let Ok(files) = sqlx::query_as::<_, (String, Vec<u8>)>("SELECT name, data FROM files WHERE owner_id = $1")
-        .bind(doc.owner_id)
-        .fetch_all(&state.db)
-        .await
-    {
-        for (name, data) in files {
-            files_map.insert(name, data);
-        }
-    }
-
-    ws.on_upgrade(move |socket| async move {
+    Ok(ws.on_upgrade(move |socket| async move {
         use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
         use tokio::process::Command;
         use std::process::Stdio;
@@ -683,15 +469,30 @@ pub async fn lsp_handler(
             let _ = std::fs::write(&path, data);
         }
 
-        let mut child = Command::new("tinymist")
+        let spawned = Command::new("tinymist")
             .arg("lsp")
             .arg("--font-path")
             .arg(temp_dir.path())
             .current_dir(temp_dir.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .spawn()
-            .expect("Failed to start tinymist lsp");
+            .kill_on_drop(true)
+            .spawn();
+        let mut child = match spawned {
+            Ok(child) => child,
+            Err(e) => {
+                // Editing works without the language server; say so once instead of
+                // failing on every opened file.
+                static WARNED: std::sync::Once = std::sync::Once::new();
+                WARNED.call_once(|| {
+                    tracing::warn!(
+                        "Language server features (completion, hover) are off: could not start tinymist ({e}). \
+                         Install tinymist and put it on the PATH to enable them."
+                    );
+                });
+                return;
+            }
+        };
 
         let mut stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
@@ -763,5 +564,5 @@ pub async fn lsp_handler(
             _ = lsp_to_ws => {}
             _ = child.wait() => {}
         }
-    })
+    }))
 }

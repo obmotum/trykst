@@ -64,12 +64,14 @@ export function getThemeExtension(themeName: keyof typeof themes, isDark: boolea
     const theme = EditorView.theme({
         "&": {
             color: colors.text,
-            backgroundColor: colors.background,
+            // Set by the layout: the editing surface, lighter than the panels around it.
+            backgroundColor: `var(--theme-surface, ${colors.background})`,
             height: "100%",
             fontSize: "14px"
         },
         ".cm-content": {
-            caretColor: colors.cursor
+            caretColor: colors.cursor,
+            paddingLeft: "6px"
         },
         ".cm-cursor, .cm-dropCursor": { borderLeftColor: colors.cursor },
         "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: colors.selection },
@@ -89,17 +91,38 @@ export function getThemeExtension(themeName: keyof typeof themes, isDark: boolea
             backgroundColor: "#bad0f847"
         },
         ".cm-gutters": {
-            backgroundColor: colors.background,
+            backgroundColor: `var(--theme-surface, ${colors.background})`,
             color: colors.comment,
-            border: "none"
+            border: "none",
+            // A rule between the line numbers and the text.
+            borderRight: `1px solid ${colors.selection}`,
+            userSelect: "none"
         },
+        ".cm-lineNumbers .cm-gutterElement": {
+            cursor: "default",
+            padding: "0 10px 0 12px"
+        },
+
         ".cm-activeLineGutter": {
-            backgroundColor: colors.selection
+            backgroundColor: colors.selection,
+            color: colors.text,
+            fontWeight: "600"
+        },
+        ".cm-foldGutter .cm-gutterElement": {
+            cursor: "pointer",
+            padding: "0 4px",
+            color: colors.comment
+        },
+        ".cm-foldGutter .cm-gutterElement:hover": {
+            color: colors.text
         },
         ".cm-foldPlaceholder": {
-            backgroundColor: "transparent",
+            backgroundColor: colors.selection,
             border: "none",
-            color: "#ddd"
+            borderRadius: "3px",
+            padding: "0 6px",
+            margin: "0 4px",
+            color: colors.comment
         },
         ".cm-tooltip": {
             border: "none",

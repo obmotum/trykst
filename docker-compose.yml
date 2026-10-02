@@ -11,6 +11,10 @@ services:
       # PostgreSQL alternative (uncomment and set DB_TYPE=postgres):
       # - DATABASE_URL=postgres://postgres:password@db:5432/trykst
       # - DB_TYPE=postgres
+      # Upgrading from 0.1.x: Trykst 0.2 does not migrate old data and refuses to start
+      # on a 0.1.x database. Use a new database, or uncomment this for ONE start to
+      # DELETE all existing data, then remove it again:
+      # - TRYKST_DROP_LEGACY_DATA=true
 
       # --- Optional ---
       # Server listen port (default: 3000, also update the ports mapping above)
@@ -37,8 +41,8 @@ services:
       # - OIDC_ADMIN_ROLE=trykst-admin
       # Only members of this role may sign in
       # - OIDC_REQUIRED_ROLE=trykst-user
-      # Members of this role are guests (external users): they only see what is shared
-      # with them and cannot create documents, spaces, packages or API keys
+      # Members of this role are guests (external users): they work in the projects
+      # they were added to and cannot create projects or API keys
       # - OIDC_GUEST_ROLE=trykst-external
       # Guests by organization (Keycloak 26 Organizations): members of these organizations
       # (aliases) are regular users, members of only other organizations are guests.

@@ -4,13 +4,40 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { userStore } from '../ts/auth';
 	import { commentReference } from '../ts/store';
+	import { formatDateTime } from '../ts/api';
+	import type { TreeNode } from '../ts/api';
 
 	// Viewers may read comments but not post or resolve them (enforced by the server too).
-	let { docId, onClose, readOnly = false } = $props<{ docId: string, onClose: () => void, readOnly?: boolean }>();
+	// Authors manage their own comments; project owners may resolve or delete any.
+	let {
+		docId,
+		nodes = [],
+		activeNode = null,
+		readOnly = false,
+		isOwner = false,
+		onClose
+	}: {
+		docId: string;
+		nodes?: TreeNode[];
+		/** New comments are attached to the file that is open in the editor. */
+		activeNode?: TreeNode | null;
+		readOnly?: boolean;
+		isOwner?: boolean;
+		onClose: () => void;
+	} = $props();
+
+	function pathOf(nodeId: string | null | undefined): string | undefined {
+		return nodeId ? nodes.find((n) => n.id === nodeId)?.path : undefined;
+	}
+
+	function canManage(comment: Comment): boolean {
+		return isOwner || (!readOnly && $userStore?.id === comment.user_id);
+	}
 
 	type Comment = {
 		id: string;
 		document_id: string;
+		node_id?: string | null;
 		user_id: string;
 		content: string;
 		resolved: boolean;
@@ -27,7 +54,7 @@
 	async function fetchComments() {
 		loading = true;
 		try {
-			const res = await fetch(`/api/docs/${docId}/comments`);
+			const res = await fetch(`/api/documents/${docId}/comments`);
 			if (!res.ok) throw new Error('Failed to load comments');
 			comments = await res.json();
 		} catch (e: any) {
@@ -40,10 +67,10 @@
 	async function postComment() {
 		if (!newCommentContent.trim()) return;
 		try {
-			const res = await fetch(`/api/docs/${docId}/comments`, {
+			const res = await fetch(`/api/documents/${docId}/comments`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ content: newCommentContent })
+				body: JSON.stringify({ content: newCommentContent, node_id: activeNode && activeNode.kind !== 'folder' ? activeNode.id : null })
 			});
 			if (!res.ok) throw new Error('Failed to post comment');
 			const c: Comment = await res.json();
@@ -78,12 +105,6 @@
 		} catch (e: any) {
 			alert(e.message);
 		}
-	}
-
-	function formatDate(dateStr: string) {
-		return new Date(dateStr).toLocaleString(undefined, {
-			month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
-		});
 	}
 
 	$effect(() => {
@@ -132,23 +153,26 @@
 							<Avatar name={comment.author_name} url={comment.author_avatar_url} seed={comment.user_id} size={24} />
 							<div>
 								<p class="text-xs font-semibold text-[var(--theme-text)]">{comment.author_name || 'Anonymous'}</p>
-								<p class="text-[10px]">{formatDate(comment.created_at)}</p>
+								<p class="text-[10px]">{formatDateTime(comment.created_at)}</p>
 							</div>
 						</div>
 						
 						<div class="flex opacity-0 group-hover:opacity-100 transition-opacity gap-1">
-							{#if $userStore?.id === comment.user_id}
+							{#if canManage(comment)}
 								<button onclick={() => deleteComment(comment.id)} class="p-1 hover:text-red-500 rounded hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors" title="Delete">
 									<Icon icon="mdi:trash-can-outline" class="text-xs" />
 								</button>
 							{/if}
-							{#if !readOnly}
+							{#if canManage(comment)}
 								<button onclick={() => toggleResolve(comment)} class="p-1 hover:text-emerald-500 rounded hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors" title={comment.resolved ? "Reopen" : "Resolve"}>
 									<Icon icon={comment.resolved ? "mdi:check-circle" : "mdi:check-circle-outline"} class="text-xs" />
 								</button>
 							{/if}
 						</div>
 					</div>
+					{#if pathOf(comment.node_id)}
+						<p class="text-[11px] font-mono opacity-70 flex items-center gap-1 truncate" title="File this comment refers to"><Icon icon="mdi:file-outline" class="flex-shrink-0" /> {pathOf(comment.node_id)}</p>
+					{/if}
 					<p class="text-sm leading-relaxed whitespace-pre-wrap">{comment.content}</p>
 				</div>
 			{/each}
@@ -178,6 +202,9 @@
 					<Icon icon="mdi:send" class="text-sm" />
 				</button>
 			</div>
+			{#if activeNode && activeNode.kind !== 'folder'}
+				<p class="text-[10px] mt-2 text-center opacity-70 truncate">Commenting on {activeNode.path}</p>
+			{/if}
 			<p class="text-[10px] mt-2 text-center">Press <kbd class="font-mono px-1 py-0.5 rounded">Enter</kbd> to post, <kbd class="font-mono px-1 py-0.5 rounded">Shift+Enter</kbd> for newline</p>
 		</div>
 	{/if}

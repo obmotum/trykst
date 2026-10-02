@@ -1,8 +1,9 @@
 # README screenshots
 
-Takes `preview/dashboard.png` and `preview/editor.png` for the main README:
-signs in as `alice` through the dev Keycloak, creates sample documents and
-captures the dashboard and the editor (Catppuccin Dark, 1900×950).
+Takes `preview/dashboard.png`, `preview/project.png` and `preview/editor.png`
+for the main README: signs in as `alice` through the dev Keycloak, creates
+sample projects and documents and captures the project list, a project and
+the editor (Catppuccin Dark, 1900×950).
 
 ## Requirements
 
@@ -25,5 +26,5 @@ The images are written to `preview/`. Pass another directory as argument to
 keep the current ones: `node shoot.js /tmp/shots`. Point `TRYKST_URL` at a
 different instance if needed.
 
-The sample paper is `paper.typ`; the meeting notes and the proposal are
-inline in `shoot.js`.
+The sample paper is the `sample/` folder, uploaded with its subfolders; the
+meeting notes and the proposal are inline in `shoot.js`.

@@ -1,14 +1,20 @@
 <script lang="ts">
 	import Icon from '@iconify/svelte';
 
+	import { userStore } from '$lib/ts/auth';
+
 	let {
-		spaceId,
+		docId,
 		onClose
 	}: {
-		spaceId: string;
+		docId: string;
 		onClose: () => void;
 	} = $props();
 
+	// Project packages are for the documents of this project; instance packages
+	// are importable everywhere and reserved for admins.
+	let scope = $state<'project' | 'instance'>('project');
+	let prefix = $derived(scope === 'instance' ? 'trykst' : 'project');
 	let version = $state('');
 	let publishing = $state(false);
 	let error = $state('');
@@ -22,13 +28,13 @@
 			const res = await fetch('/api/packages/publish', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ space_id: spaceId, version: version.trim() || undefined })
+				body: JSON.stringify({ document_id: docId, scope, version: version.trim() || undefined })
 			});
 			if (!res.ok) {
 				error = await res.text();
 			} else {
 				const pkg = await res.json();
-				success = `Published @trykst/${pkg.name}`;
+				success = `Published @${prefix}/${pkg.name}:${pkg.latest_version ?? ''}`;
 			}
 		} catch (e) {
 			error = 'Network error while publishing.';
@@ -45,10 +51,19 @@
 		</div>
 
 		<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-			Snapshots this space's files into an immutable package version, importable instance-wide as
-			<code class="font-mono text-xs bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">@trykst/&lt;name&gt;:&lt;version&gt;</code>.
+			Snapshots this document's files into an immutable package version, importable as
+			<code class="font-mono text-xs bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">@{prefix}/&lt;name&gt;:&lt;version&gt;</code>
+			{scope === 'instance' ? 'by every document on this instance.' : 'by the documents of this project.'}
 			The name, version and entrypoint come from your <code class="font-mono text-xs bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">typst.toml</code>.
 		</p>
+
+		{#if $userStore?.is_admin}
+			<label class="block text-sm font-medium mb-1" for="pkg-scope">Available to</label>
+			<select id="pkg-scope" bind:value={scope} class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-white/10 bg-[var(--theme-bg)] text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500/40">
+				<option value="project">This project (@project/…)</option>
+				<option value="instance">Everyone on this instance (@trykst/…)</option>
+			</select>
+		{/if}
 
 		<label class="block text-sm font-medium mb-1" for="pkg-version">Version override (optional)</label>
 		<input

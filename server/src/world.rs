@@ -21,9 +21,16 @@ pub struct MemoryWorld {
     packages: SystemPackages,
 }
 
-/// Packages published in Trykst. `typstdrive` is accepted so documents written
-/// for TypstDrive keep compiling after a migration.
-const LOCAL_NAMESPACES: [&str; 2] = ["trykst", "typstdrive"];
+/// Packages published in Trykst: `@project/...` resolves to the packages of the
+/// document's own project, `@trykst/...` to instance-wide ones. `@typstdrive/...`
+/// is an alias of `@trykst` for documents written for TypstDrive.
+fn local_namespace(namespace: &str) -> Option<&'static str> {
+    match namespace {
+        "project" => Some("project"),
+        "trykst" | "typstdrive" => Some("trykst"),
+        _ => None,
+    }
+}
 
 const REMOTE_FETCH_TIMEOUT_SECS: u64 = 15;
 const REMOTE_MAX_BYTES: u64 = 50 * 1024 * 1024;
@@ -123,8 +130,8 @@ impl MemoryWorld {
         let path = normalize_path(id.vpath().get_without_slash());
 
         if let VirtualRoot::Package(package) = id.root() {
-            if LOCAL_NAMESPACES.contains(&package.namespace.as_str()) {
-                let key = format!("{}:{}", package.name, package.version);
+            if let Some(namespace) = local_namespace(package.namespace.as_str()) {
+                let key = format!("{}/{}:{}", namespace, package.name, package.version);
                 return self
                     .local_packages
                     .get(&key)

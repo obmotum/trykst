@@ -1,7 +1,7 @@
 <script lang="ts">
     import Icon from '@iconify/svelte';
     let { deleteTarget, confirmDelete, onClose } = $props<{ 
-        deleteTarget: {id: string, type: 'document'|'folder'|'file', name: string}, 
+        deleteTarget: {id: string, type: string, name: string}, 
         confirmDelete: () => void, 
         onClose: () => void 
     }>();
@@ -19,7 +19,7 @@
             
             <p class="text-gray-600 dark:text-gray-300 text-sm mb-6">
                 Are you sure you want to delete <span class="font-semibold text-gray-900 dark:text-white">{deleteTarget.name}</span>?
-                {#if deleteTarget.type === 'folder'}This will also delete all of its contents.{/if}
+                {#if deleteTarget.type === 'project'}This also deletes all its documents, with their files, comments and versions.{:else if deleteTarget.type === 'document'}This also deletes its files, comments and versions.{:else if deleteTarget.type === 'package'}Documents importing it will no longer compile.{/if}
                 This action cannot be undone.
             </p>
             

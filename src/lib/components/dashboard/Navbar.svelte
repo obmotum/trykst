@@ -7,10 +7,10 @@
 </script>
 
 <nav class="bg-[var(--theme-bg)] shadow-sm border-b border-gray-200 dark:border-white/10 px-6 py-4 flex justify-between items-center sticky top-0 z-10 transition-colors duration-200">
-    <h1 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+    <a href="/dashboard" class="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3" title="Projects">
         <Icon icon="mdi:script-text" class="text-blue-600 dark:text-blue-400 text-3xl" />
         Trykst
-    </h1>
+    </a>
     <div class="flex items-center gap-6">
         <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-medium">
             <Avatar name={$userStore?.username} url={$userStore?.avatar_url} seed={$userStore?.id} size={28} />
@@ -18,8 +18,8 @@
         </div>
         <div class="h-6 w-px bg-gray-300 dark:bg-white/20"></div>
 
-        <a href="/spaces" class="text-sm font-medium text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 transition-colors bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 px-3 py-2 rounded-lg flex items-center gap-2 border border-transparent dark:border-white/10" title="Spaces">
-            <Icon icon="mdi:folder-multiple-outline" class="text-xl" />
+        <a href="/dashboard" class="text-sm font-medium text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 transition-colors bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 px-3 py-2 rounded-lg flex items-center gap-2 border border-transparent dark:border-white/10" title="Projects">
+            <Icon icon="mdi:folder-account-outline" class="text-xl" />
         </a>
         <a href="/packages" class="text-sm font-medium text-gray-600 hover:text-purple-600 dark:text-gray-300 dark:hover:text-purple-400 transition-colors bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 px-3 py-2 rounded-lg flex items-center gap-2 border border-transparent dark:border-white/10" title="Packages">
             <Icon icon="mdi:package-variant-closed" class="text-xl" />

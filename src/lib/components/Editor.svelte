@@ -1,31 +1,34 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { EditorState, Compartment } from '@codemirror/state';
-	import { EditorView, lineNumbers, keymap } from '@codemirror/view';
+	import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
+	import { EditorView, lineNumbers, highlightActiveLineGutter, keymap, type BlockInfo } from '@codemirror/view';
 	import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 	import { autocompletion, snippetCompletion, type CompletionContext } from '@codemirror/autocomplete';
 	import { typst, TypstParser, typstHighlight } from 'codemirror-lang-typst';
 	import { Language, StreamLanguage } from '@codemirror/language';
 	import { toml } from '@codemirror/legacy-modes/mode/toml';
 	import { yCollab } from 'y-codemirror.next';
-	import { text, provider } from '../ts/yjs-setup';
 	import { getThemeExtension } from '../ts/themes';
+	import { folding, indentedWrapping } from '../ts/editor-extensions';
 	import { themeStore, darkModeStore, editorViewStore, editorErrors, triggerLspReconnect } from '../ts/store';
 	import { page } from '$app/stores';
 	import { LSPClient, languageServerExtensions } from "@codemirror/lsp-client";
 	import { setDiagnostics, lintGutter } from '@codemirror/lint';
 
 	let {
-		ytext = undefined,
-		awarenessProvider = undefined,
+		ytext,
+		awarenessProvider,
 		lspDocId = undefined,
 		enableLsp = true,
 		filePath = undefined
 	}: {
-		ytext?: any;
-		awarenessProvider?: any;
+		/** The Yjs text of the file and the provider of its collaboration room. */
+		ytext: any;
+		awarenessProvider: any;
+		/** Document whose files the language server sees; defaults to the page's id. */
 		lspDocId?: string;
 		enableLsp?: boolean;
+		/** Path of the file inside the document, e.g. `chapters/intro.typ`. */
 		filePath?: string;
 	} = $props();
 
@@ -134,6 +137,43 @@
 		snippetCompletion("mid(${|})", { label: "mid", type: "function", info: "Mid delimiter (Math)" })
 	];
 
+	/**
+	 * Line numbers behave like in a desktop editor: a click selects the whole
+	 * line, dragging selects a range of lines, Shift+click extends the selection.
+	 */
+	function selectLinesFromGutter(view: EditorView, block: BlockInfo, event: Event): boolean {
+		const mouse = event as MouseEvent;
+		if (mouse.button !== 0) return false;
+		const doc = view.state.doc;
+		const clicked = doc.lineAt(block.from).number;
+		// Shift+click continues from the line the selection started on.
+		const anchorLine = mouse.shiftKey ? doc.lineAt(view.state.selection.main.anchor).number : clicked;
+
+		const select = (target: number) => {
+			const first = doc.line(Math.min(anchorLine, target));
+			const last = doc.line(Math.max(anchorLine, target));
+			// Whole lines include their line break, so typing or deleting replaces them entirely.
+			const end = Math.min(last.to + 1, doc.length);
+			const range = target >= anchorLine ? EditorSelection.range(first.from, end) : EditorSelection.range(end, first.from);
+			view.dispatch({ selection: EditorSelection.create([range]), userEvent: 'select.pointer' });
+		};
+		select(clicked);
+		view.focus();
+
+		const onMove = (e: MouseEvent) => {
+			const y = Math.min(Math.max(e.clientY - view.documentTop, 0), view.contentHeight - 1);
+			select(doc.lineAt(view.lineBlockAtHeight(y).from).number);
+		};
+		const onUp = () => {
+			window.removeEventListener('mousemove', onMove);
+			window.removeEventListener('mouseup', onUp);
+		};
+		window.addEventListener('mousemove', onMove);
+		window.addEventListener('mouseup', onUp);
+		mouse.preventDefault();
+		return true;
+	}
+
 	function typstCompletions(context: CompletionContext) {
 		let word = context.matchBefore(/[\w#]*/);
 		if (!word || (word.from == word.to && !context.explicit)) return null;
@@ -151,8 +191,8 @@
 	}
 
 	onMount(() => {
-		const activeText = ytext ?? text;
-		const activeProvider = awarenessProvider ?? provider;
+		const activeText = ytext;
+		const activeProvider = awarenessProvider;
 		if (!activeText || !activeProvider) return;
 
 		themeStore.subscribe(t => { currentTheme = t; })();
@@ -174,7 +214,9 @@
 		state = EditorState.create({
 			doc: activeText.toString(),
 			extensions: [
-				lineNumbers(),
+				lineNumbers({ domEventHandlers: { mousedown: selectLinesFromGutter } }),
+				highlightActiveLineGutter(),
+				folding(),
 				lintGutter(),
 				history(),
 				keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab] as any),
@@ -183,7 +225,7 @@
 				...completionExtensions,
 				themeCompartment.of(getThemeExtension(currentTheme as any, isDark)),
 				lspCompartment.of([]),
-				EditorView.lineWrapping,
+				indentedWrapping(),
 				EditorView.theme({
 					'&': { height: '100%', fontSize: '14px' },
 					'.cm-scroller': { overflow: 'auto' },
@@ -199,6 +241,7 @@
 		});
 		
 		editorViewStore.set(view);
+		view.focus();
 
 		unsubscribeErrors = editorErrors.subscribe((errors) => {
 			if (view) {
@@ -241,6 +284,7 @@
 		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 		const host = window.location.host;
 		const docId = lspDocId ?? $page.params.id;
+		const lspPath = (filePath ?? 'main.typ').split('/').map(encodeURIComponent).join('/');
 
 		let lsHandlers: ((value: string) => void)[] = [];
 		let lspInitialized = false;
@@ -276,7 +320,7 @@
 							}).connect(transport);
 
 							view.dispatch({
-								effects: lspCompartment.reconfigure(client.plugin(`${msg.rootUri}/${docId}.typ`, 'typst'))
+								effects: lspCompartment.reconfigure(client.plugin(`${msg.rootUri}/${lspPath}`, 'typst'))
 							});
 							return;
 						}

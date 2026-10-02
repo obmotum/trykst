@@ -590,7 +590,7 @@ async fn provision_user(state: &AppState, claims: &Value) -> Result<String, ApiE
                 .map_err(internal)?;
             let is_admin = config.admin_role.is_none() && is_first.0 == 0 && !is_guest;
             sqlx::query(
-                "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject, avatar_url) VALUES ($1, $2, $3, '', $4, $5, $6, $7)",
+                "INSERT INTO users (id, username, email, is_admin, oidc_issuer, oidc_subject, avatar_url) VALUES ($1, $2, $3, $4, $5, $6, $7)",
             )
             .bind(&id)
             .bind(&username)
@@ -758,7 +758,7 @@ pub async fn resolve_invitee(state: &AppState, subject: Option<&str>, email: Opt
     let id = Uuid::new_v4().to_string();
     let username = unique_username(state, &username, None).await?;
     sqlx::query(
-        "INSERT INTO users (id, username, email, password_hash, is_admin, oidc_issuer, oidc_subject, avatar_url) VALUES ($1, $2, $3, '', 0, $4, $5, $6)",
+        "INSERT INTO users (id, username, email, is_admin, oidc_issuer, oidc_subject, avatar_url) VALUES ($1, $2, $3, 0, $4, $5, $6)",
     )
     .bind(&id)
     .bind(&username)

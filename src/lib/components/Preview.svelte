@@ -1,17 +1,19 @@
 <script lang="ts">
-	import type { Diagnostic } from '../ts/typst-api';
 	import { documentZoomStore } from '../ts/store';
+	import type { PreviewPage as Page } from '../ts/typst-api';
+	import PreviewPage from './PreviewPage.svelte';
 
-	let { svgs = [] } = $props<{ svgs?: string[] }>();
+	let { pages = [] }: { pages?: Required<Page>[] } = $props();
+
+	let scroller = $state<HTMLElement>();
 </script>
 
-<div class="relative h-full w-full overflow-auto bg-transparent py-8 px-4 flex flex-col items-center gap-8">
-	<div class="flex flex-col items-center gap-8 transition-transform duration-200" style="transform: scale({$documentZoomStore / 100}); transform-origin: top center;">
-		{#if svgs.length > 0}
-			{#each svgs as svg, i}
-				<div class="preview-container shadow-xl bg-white max-w-full lg:max-w-[95%] w-auto inline-block flex-shrink-0 transition-transform duration-200">
-					{@html svg}
-				</div>
+<div bind:this={scroller} class="relative h-full w-full overflow-auto bg-transparent py-8 px-4 flex flex-col items-center gap-8">
+	<div class="flex flex-col items-center gap-8 transition-transform duration-200 max-w-full" style="transform: scale({$documentZoomStore / 100}); transform-origin: top center;">
+		{#if pages.length > 0}
+			<!-- Keyed by position: a page whose content did not change keeps its DOM. -->
+			{#each pages as page, i (i)}
+				<PreviewPage svg={page.svg} root={scroller} />
 			{/each}
 		{:else}
 			<div class="text-gray-400 flex flex-col items-center justify-center h-full">
@@ -20,12 +22,3 @@
 		{/if}
 	</div>
 </div>
-
-<style>
-	
-	:global(.preview-container svg) {
-		max-width: 100%;
-		height: auto;
-		display: block;
-	}
-</style>
