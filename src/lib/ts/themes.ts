@@ -70,7 +70,8 @@ export function getThemeExtension(themeName: keyof typeof themes, isDark: boolea
             fontSize: "14px"
         },
         ".cm-content": {
-            caretColor: colors.cursor
+            caretColor: colors.cursor,
+            paddingLeft: "6px"
         },
         ".cm-cursor, .cm-dropCursor": { borderLeftColor: colors.cursor },
         "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: colors.selection },
@@ -92,8 +93,16 @@ export function getThemeExtension(themeName: keyof typeof themes, isDark: boolea
         ".cm-gutters": {
             backgroundColor: `var(--theme-surface, ${colors.background})`,
             color: colors.comment,
-            border: "none"
+            border: "none",
+            // A rule between the line numbers and the text.
+            borderRight: `1px solid ${colors.selection}`,
+            userSelect: "none"
         },
+        ".cm-lineNumbers .cm-gutterElement": {
+            cursor: "default",
+            padding: "0 10px 0 12px"
+        },
+
         ".cm-activeLineGutter": {
             backgroundColor: colors.selection
         },

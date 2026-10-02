@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { EditorState, Compartment } from '@codemirror/state';
-	import { EditorView, lineNumbers, keymap } from '@codemirror/view';
+	import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
+	import { EditorView, lineNumbers, keymap, type BlockInfo } from '@codemirror/view';
 	import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 	import { autocompletion, snippetCompletion, type CompletionContext } from '@codemirror/autocomplete';
 	import { typst, TypstParser, typstHighlight } from 'codemirror-lang-typst';
@@ -136,6 +136,43 @@
 		snippetCompletion("mid(${|})", { label: "mid", type: "function", info: "Mid delimiter (Math)" })
 	];
 
+	/**
+	 * Line numbers behave like in a desktop editor: a click selects the whole
+	 * line, dragging selects a range of lines, Shift+click extends the selection.
+	 */
+	function selectLinesFromGutter(view: EditorView, block: BlockInfo, event: Event): boolean {
+		const mouse = event as MouseEvent;
+		if (mouse.button !== 0) return false;
+		const doc = view.state.doc;
+		const clicked = doc.lineAt(block.from).number;
+		// Shift+click continues from the line the selection started on.
+		const anchorLine = mouse.shiftKey ? doc.lineAt(view.state.selection.main.anchor).number : clicked;
+
+		const select = (target: number) => {
+			const first = doc.line(Math.min(anchorLine, target));
+			const last = doc.line(Math.max(anchorLine, target));
+			// Whole lines include their line break, so typing or deleting replaces them entirely.
+			const end = Math.min(last.to + 1, doc.length);
+			const range = target >= anchorLine ? EditorSelection.range(first.from, end) : EditorSelection.range(end, first.from);
+			view.dispatch({ selection: EditorSelection.create([range]), userEvent: 'select.pointer' });
+		};
+		select(clicked);
+		view.focus();
+
+		const onMove = (e: MouseEvent) => {
+			const y = Math.min(Math.max(e.clientY - view.documentTop, 0), view.contentHeight - 1);
+			select(doc.lineAt(view.lineBlockAtHeight(y).from).number);
+		};
+		const onUp = () => {
+			window.removeEventListener('mousemove', onMove);
+			window.removeEventListener('mouseup', onUp);
+		};
+		window.addEventListener('mousemove', onMove);
+		window.addEventListener('mouseup', onUp);
+		mouse.preventDefault();
+		return true;
+	}
+
 	function typstCompletions(context: CompletionContext) {
 		let word = context.matchBefore(/[\w#]*/);
 		if (!word || (word.from == word.to && !context.explicit)) return null;
@@ -176,7 +213,7 @@
 		state = EditorState.create({
 			doc: activeText.toString(),
 			extensions: [
-				lineNumbers(),
+				lineNumbers({ domEventHandlers: { mousedown: selectLinesFromGutter } }),
 				lintGutter(),
 				history(),
 				keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab] as any),
