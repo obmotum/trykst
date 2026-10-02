@@ -7,21 +7,32 @@ export interface Diagnostic {
 	to?: number;
 }
 
+/** A page of the live preview; `svg` is left out when the client already has this hash. */
+export interface PreviewPage {
+	hash: string;
+	svg?: string;
+}
+
 export interface CompileResponse {
-	svgs: string[] | null;
+	pages: PreviewPage[] | null;
 	errors: Diagnostic[] | null;
 	stats?: { pages: number; words: number; characters: number; characters_excluding_spaces: number };
 }
 
 /**
  * Compiles a document from its entrypoint. `files` holds unsaved text by path
- * and takes precedence over what the server has stored.
+ * and takes precedence over what the server has stored. `known` lists the
+ * hashes of the pages already shown; the server sends only the other pages.
  */
-export async function compileDocument(document_id: string, files: Record<string, string>): Promise<CompileResponse> {
+export async function compileDocument(
+	document_id: string,
+	files: Record<string, string>,
+	known: string[] = []
+): Promise<CompileResponse> {
 	const res = await fetch('/api/compile', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ document_id, files })
+		body: JSON.stringify({ document_id, files, known })
 	});
 	if (!res.ok) throw new Error((await res.text()) || 'Compilation failed');
 	return await res.json();

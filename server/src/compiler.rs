@@ -1,6 +1,6 @@
 use crate::world::MemoryWorld;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use typst::diag::{SourceDiagnostic, Warned};
 
 /// Compiler errors with the byte range they refer to in the main source, if known.
@@ -55,6 +55,15 @@ fn extract_frame_text(frame: &Frame, text: &mut String) {
     }
 }
 
+/// One page of the live preview. `svg` is absent when the client already has
+/// a page with this hash.
+#[derive(Serialize)]
+pub struct PreviewPage {
+    pub hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub svg: Option<String>,
+}
+
 pub struct ProjectInput {
     pub entrypoint: String,
     pub files: HashMap<String, Vec<u8>>,
@@ -99,16 +108,12 @@ impl TypstCompiler {
             } => {
                 let stats = extract_stats(&doc);
                 let options = SvgOptions::default();
-                let svgs = doc
+                let svgs: Vec<String> = doc
                     .pages()
                     .iter()
                     .map(|page| typst_svg::svg(page, &options))
                     .collect();
-                let thumbnail = if let Some(page) = doc.pages().first() {
-                    typst_svg::svg(page, &options)
-                } else {
-                    String::new()
-                };
+                let thumbnail = svgs.first().cloned().unwrap_or_default();
                 Ok((svgs, thumbnail, stats))
             }
             Warned {
@@ -124,6 +129,43 @@ impl TypstCompiler {
                     })
                     .collect();
                 Err(diag)
+            }
+        }
+    }
+
+    /// Compiles for the live preview. Every page is identified by a hash of its
+    /// layout; pages whose hash the client already has (`known`) are not
+    /// rendered again, since rendering and shipping SVG is the expensive part.
+    pub fn compile_preview(
+        &self,
+        input: ProjectInput,
+        known: &HashSet<String>,
+    ) -> Result<(Vec<PreviewPage>, DocumentStats), Diagnostics> {
+        let world = input.into_world(false);
+        match typst::compile::<PagedDocument>(&world) {
+            Warned { output: Ok(doc), warnings: _ } => {
+                let stats = extract_stats(&doc);
+                let options = SvgOptions::default();
+                let pages = doc
+                    .pages()
+                    .iter()
+                    .map(|page| {
+                        let hash = format!("{:032x}", typst::utils::hash128(page));
+                        let svg = (!known.contains(&hash)).then(|| typst_svg::svg(page, &options));
+                        PreviewPage { hash, svg }
+                    })
+                    .collect();
+                Ok((pages, stats))
+            }
+            Warned { output: Err(errors), warnings: _ } => {
+                use typst::WorldExt;
+                Err(errors
+                    .into_iter()
+                    .map(|d| {
+                        let range = world.range(d.span);
+                        (d, range)
+                    })
+                    .collect())
             }
         }
     }

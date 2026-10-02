@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { get } from 'svelte/store';
+	import { previewSvgsStore } from '../ts/store';
 	import Icon from '@iconify/svelte';
 
 	let { onClose } = $props<{ onClose: () => void }>();
@@ -39,12 +41,7 @@
 	}
 
 	onMount(() => {
-		const previewContainers = document.querySelectorAll('.preview-container svg');
-		const svgStrings: string[] = [];
-		previewContainers.forEach(container => {
-			svgStrings.push(container.outerHTML);
-		});
-		svgs = svgStrings;
+		svgs = get(previewSvgsStore);
 
 		const el = document.getElementById('presentation-container');
 		if (el && el.requestFullscreen) {

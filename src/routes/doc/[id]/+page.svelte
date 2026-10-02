@@ -14,8 +14,8 @@
 	import { api, canWrite } from '$lib/ts/api';
 	import type { Doc, Tree, TreeNode } from '$lib/ts/api';
 	import { compileDocument } from '$lib/ts/typst-api';
-	import type { Diagnostic } from '$lib/ts/typst-api';
-	import { editorErrors, documentStatsStore, previewOpenStore, editorViewStore, commentsSidebarOpen, commentReference, versionHistoryOpen } from '$lib/ts/store';
+	import type { Diagnostic, PreviewPage } from '$lib/ts/typst-api';
+	import { editorErrors, documentStatsStore, previewOpenStore, previewSvgsStore, editorViewStore, commentsSidebarOpen, commentReference, versionHistoryOpen } from '$lib/ts/store';
 	import { setDocument, openFile, closeFile, closeAllFiles, setActiveFile, openTexts, cleanupDocument } from '$lib/ts/yjs-document';
 	import type { OpenFile } from '$lib/ts/yjs-document';
 
@@ -27,7 +27,7 @@
 	let nodes = $state<TreeNode[]>([]);
 	let activeId = $state('');
 	let activeEntry = $state.raw<OpenFile | undefined>(undefined);
-	let svgs = $state<string[]>([]);
+	let pages = $state.raw<Required<PreviewPage>[]>([]);
 	let errors = $state<Diagnostic[]>([]);
 	let showPublish = $state(false);
 	let loadError = $state('');
@@ -75,21 +75,42 @@
 		compileTimer = window.setTimeout(triggerCompile, 500);
 	}
 
-	function triggerCompile() {
+	// Never two compilations at once: changes made while one is running are
+	// picked up by a single follow-up run.
+	let compiling = false;
+	let compileAgain = false;
+
+	async function triggerCompile() {
 		if (!doc || (!$previewOpenStore && !readOnly)) return;
-		compileDocument(docId, getFiles())
-			.then((res) => {
-				if (res.stats) $documentStatsStore = res.stats;
-				if (res.svgs) {
-					svgs = res.svgs;
-					errors = [];
-				} else if (res.errors) {
-					errors = res.errors;
-				}
-			})
-			.catch(() => {
-				errors = [{ message: 'Network or server error while compiling the document.', severity: 'Error' }];
-			});
+		if (compiling) {
+			compileAgain = true;
+			return;
+		}
+		compiling = true;
+		try {
+			// The server sends only the pages that are not on screen already.
+			const have = new Map(pages.map((p) => [p.hash, p.svg]));
+			let res = await compileDocument(docId, getFiles(), [...have.keys()]);
+			if (res.pages?.some((p) => p.svg === undefined && !have.has(p.hash))) {
+				res = await compileDocument(docId, getFiles());
+			}
+			if (res.stats) $documentStatsStore = res.stats;
+			if (res.pages) {
+				pages = res.pages.map((p) => ({ hash: p.hash, svg: p.svg ?? have.get(p.hash) ?? '' }));
+				$previewSvgsStore = pages.map((p) => p.svg);
+				errors = [];
+			} else if (res.errors) {
+				errors = res.errors;
+			}
+		} catch {
+			errors = [{ message: 'Network or server error while compiling the document.', severity: 'Error' }];
+		} finally {
+			compiling = false;
+			if (compileAgain) {
+				compileAgain = false;
+				scheduleCompile();
+			}
+		}
 	}
 
 	// Reopening the preview shows the current state right away.
@@ -281,6 +302,7 @@
 			document.removeEventListener('visibilitychange', onVisible);
 			cleanupDocument();
 			$editorErrors = [];
+			$previewSvgsStore = [];
 		};
 	});
 </script>
@@ -324,7 +346,7 @@
 					/>
 				</aside>
 
-				<div class="flex flex-col min-h-0 min-w-0 bg-[var(--theme-surface)] {$previewOpenStore ? 'w-full md:w-1/2 border-r border-gray-200 dark:border-white/10' : 'flex-1'}">
+				<div class="flex flex-col min-h-0 min-w-0 [contain:strict] bg-[var(--theme-surface)] {$previewOpenStore ? 'w-full md:w-1/2 border-r border-gray-200 dark:border-white/10' : 'flex-1'}">
 					{#if activeEntry && activeNode}
 						{#key activeId}
 							<Editor
@@ -355,8 +377,8 @@
 			{/if}
 
 			{#if $previewOpenStore || readOnly}
-				<div class="{readOnly ? 'flex-1' : 'w-full md:w-1/2'} min-w-0 relative bg-[var(--theme-panel)] flex flex-col">
-					<Preview {svgs} />
+				<div class="{readOnly ? 'flex-1' : 'w-full md:w-1/2'} min-w-0 relative [contain:strict] bg-[var(--theme-panel)] flex flex-col">
+					<Preview {pages} />
 					<ErrorBanner {errors} />
 				</div>
 			{/if}

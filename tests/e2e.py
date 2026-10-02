@@ -149,7 +149,7 @@ def by_path(tree, path):
 
 def compiles(session, doc_id, name):
     result = session.check(name, "POST", "/api/compile", {"document_id": doc_id}) or {}
-    return bool(result.get("svgs")) and not result.get("errors"), result
+    return bool(result.get("pages")) and not result.get("errors"), result
 
 
 alice, bob, erik = Session("alice"), Session("bob"), Session("erik")

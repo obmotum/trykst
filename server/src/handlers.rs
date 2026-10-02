@@ -7,7 +7,7 @@ use axum::{
 use axum_extra::extract::cookie::SignedCookieJar;
 use futures_util::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use yrs::sync::Awareness;
@@ -17,7 +17,7 @@ use yrs_axum::broadcast::BroadcastGroup;
 use yrs_axum::ws::AxumSink;
 
 use crate::access::{db_err, not_found, require_document, require_user, session_user, ApiError, Role};
-use crate::compiler::{Diagnostics, DocumentStats, ProjectInput};
+use crate::compiler::{Diagnostics, DocumentStats, PreviewPage, ProjectInput};
 use crate::documents::{assemble_document, document_files, room_key};
 use crate::AppState;
 
@@ -64,6 +64,9 @@ pub struct CompileRequest {
     /// Unsaved text by path, taking precedence over the stored files.
     #[serde(default)]
     pub files: Option<HashMap<String, String>>,
+    /// Hashes of the preview pages the client already has; those are not sent again.
+    #[serde(default)]
+    pub known: Vec<String>,
 }
 
 fn map_diagnostics(diags: Diagnostics) -> Vec<Diagnostic> {
@@ -86,7 +89,7 @@ fn map_diagnostics(diags: Diagnostics) -> Vec<Diagnostic> {
 
 #[derive(Serialize)]
 pub struct CompileResponse {
-    pub svgs: Option<Vec<String>>,
+    pub pages: Option<Vec<PreviewPage>>,
     pub errors: Option<Vec<Diagnostic>>,
     pub stats: Option<DocumentStats>,
 }
@@ -103,7 +106,7 @@ pub struct Diagnostic {
 
 fn error_response(message: String) -> CompileResponse {
     CompileResponse {
-        svgs: None,
+        pages: None,
         errors: Some(vec![Diagnostic { message, severity: "Error".to_string(), path: None, from: None, to: None }]),
         stats: None,
     }
@@ -253,22 +256,27 @@ pub async fn compile_handler(
         Err(message) => return Ok(Json(error_response(message))),
     };
 
+    let known: HashSet<String> = payload.known.iter().cloned().collect();
     let compiler = state.compiler.lock().await;
-    let result = compiler.compile_svg(input);
+    // Compiling can take seconds: let the runtime move other work off this thread.
+    let result = tokio::task::block_in_place(|| compiler.compile_preview(input, &known));
     drop(compiler);
 
     Ok(Json(match result {
-        Ok((svgs, thumbnail, stats)) => {
-            if let (true, Some(doc_id)) = (can_save, &payload.document_id) {
+        Ok((pages, stats)) => {
+            // The first page is the thumbnail; it only needs saving when it changed.
+            if let (true, Some(doc_id), Some(thumbnail)) =
+                (can_save, &payload.document_id, pages.first().and_then(|p| p.svg.as_ref()))
+            {
                 let _ = sqlx::query("UPDATE documents SET thumbnail_svg = $1 WHERE id = $2")
-                    .bind(&thumbnail)
+                    .bind(thumbnail)
                     .bind(doc_id)
                     .execute(&state.db)
                     .await;
             }
-            CompileResponse { svgs: Some(svgs), errors: None, stats: Some(stats) }
+            CompileResponse { pages: Some(pages), errors: None, stats: Some(stats) }
         }
-        Err(diags) => CompileResponse { svgs: None, errors: Some(map_diagnostics(diags)), stats: None },
+        Err(diags) => CompileResponse { pages: None, errors: Some(map_diagnostics(diags)), stats: None },
     }))
 }
 
