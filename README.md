@@ -157,7 +157,7 @@ To reuse code or assets across documents, publish them as a package (File → Pu
 2. Start the dev Keycloak: `docker compose -f docker-compose.dev.yml up -d`.
 3. Install `tinymist` and put it on your `PATH`; the backend uses it for LSP features.
 4. Frontend: `npm install`, then `npm run build` (served by the backend) or `npm run dev` (proxies `/api` and `/yjs` to port 3000).
-5. Backend: set the variables from the header of `docker-compose.dev.yml`, then `cd server && cargo run`.
+5. Backend: set the variables from the header of `docker-compose.dev.yml`, then `cd server && cargo run`. On Windows, `pwsh -File dev/run-server.ps1` does both (and builds the frontend if needed).
 
 Set `CARGO_TARGET_DIR` outside synced folders such as OneDrive; the build directory grows to several gigabytes.
 
