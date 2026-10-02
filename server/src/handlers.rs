@@ -566,3 +566,38 @@ pub async fn lsp_handler(
         }
     }))
 }
+
+// --- Assets for the compiler in the browser -----------------------------------------
+
+/// URLs of the fonts built into the compiler, so the preview in the browser
+/// uses exactly the fonts the server exports with.
+pub async fn default_fonts() -> Json<Vec<String>> {
+    let version = env!("CARGO_PKG_VERSION");
+    Json((0..typst_assets::fonts().count()).map(|i| format!("/api/fonts/default/{i}?v={version}")).collect())
+}
+
+pub async fn default_font(Path(index): Path<usize>) -> Result<Response, ApiError> {
+    let data = typst_assets::fonts().nth(index).ok_or((StatusCode::NOT_FOUND, "Font not found".to_string()))?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "font/otf"),
+            // The URL carries the server version, so the response never changes.
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        data,
+    )
+        .into_response())
+}
+
+/// Files under `/_app/immutable/` have content hashes in their names.
+pub async fn cache_immutable_assets(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let immutable = request.uri().path().starts_with("/_app/immutable/");
+    let mut response = next.run(request).await;
+    if immutable && response.status().is_success() {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    }
+    response
+}

@@ -142,7 +142,11 @@ async fn main() {
         .route("/packages", get(packages::list_instance_packages))
         .route("/packages/publish", post(packages::publish_package))
         .route("/packages/{id}", delete(packages::delete_package))
-        .route("/packages/{id}/versions", get(packages::list_versions));
+        .route("/packages/{id}/versions", get(packages::list_versions))
+        // What the compiler in the browser needs: packages and the built-in fonts
+        .route("/documents/{id}/packages/{namespace}/{name}/{version}", get(packages::package_files))
+        .route("/fonts/default", get(handlers::default_fonts))
+        .route("/fonts/default/{index}", get(handlers::default_font));
 
 
     let v1_routes = Router::new()
@@ -159,7 +163,15 @@ async fn main() {
         .nest("/api", api_routes.layer(session_guard.clone()).layer(TraceLayer::new_for_http()))
         .nest("/v1", v1_routes.layer(TraceLayer::new_for_http()))
         .nest("/yjs", yjs_routes.layer(session_guard).layer(TraceLayer::new_for_http()))
-        .fallback_service(ServeDir::new(&static_dir).fallback(ServeFile::new(format!("{}/index.html", static_dir))))
+        // The frontend build may ship .br and .gz files next to the originals
+        // (the compiler is 30 MB of WebAssembly); they are served when accepted.
+        .fallback_service(
+            ServeDir::new(&static_dir)
+                .precompressed_br()
+                .precompressed_gzip()
+                .fallback(ServeFile::new(format!("{}/index.html", static_dir))),
+        )
+        .layer(axum::middleware::from_fn(handlers::cache_immutable_assets))
         .with_state(state);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());

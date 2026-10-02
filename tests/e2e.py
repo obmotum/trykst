@@ -12,6 +12,7 @@ Uses only the standard library so it runs on any CI runner.
 """
 
 import argparse
+import base64
 import html
 import http.cookiejar
 import json
@@ -242,9 +243,22 @@ ok, _ = compiles(alice, did, "compile with @project import")
 expect(ok, "@project package import compiles")
 if alice.me["is_admin"]:
     # Instance packages persist across projects; a unique version keeps reruns working.
+    override = f"0.0.{int(time.time())}"
     alice.check("publish instance package", "POST", "/api/packages/publish",
-                {"document_id": pkg_did, "scope": "instance", "version": f"0.0.{int(time.time())}"})
+                {"document_id": pkg_did, "scope": "instance", "version": override})
+    # Typst rejects a package whose manifest names another version than the import.
+    shipped = alice.check("instance package for the browser", "GET",
+                          f"/api/documents/{did}/packages/trykst/gruss/{override}") or []
+    manifest = next((base64.b64decode(f["data"]).decode() for f in shipped if f["path"] == "typst.toml"), "")
+    expect(f'version = "{override}"' in manifest, "manifest carries the published version")
 alice.check("list instance packages", "GET", "/api/packages")
+# The compiler in the browser fetches package files and the built-in fonts.
+bundle = alice.check("package files for the browser", "GET", f"/api/documents/{did}/packages/project/gruss/0.1.0") or []
+expect({"typst.toml", "lib.typ"} <= {f["path"] for f in bundle}, "package bundle has manifest and entrypoint")
+alice.check("unknown package version", "GET", f"/api/documents/{did}/packages/project/gruss/9.9.9", expect=(404,))
+bob.check("package files need document access", "GET", f"/api/documents/{did}/packages/project/gruss/0.1.0", expect=(404,))
+fonts = alice.check("built-in fonts", "GET", "/api/fonts/default") or []
+expect(len(fonts) > 0, "server lists its built-in fonts")
 
 # --- Permissions --------------------------------------------------------------------------
 bob.check("non-member cannot see project", "GET", f"/api/projects/{pid}", expect=(404,))

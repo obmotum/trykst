@@ -22,7 +22,7 @@ export class ClientCompiler {
 	/** Resolves when the compiler has loaded; rejects when it cannot start. */
 	readonly ready: Promise<void>;
 
-	constructor(fonts: Uint8Array[]) {
+	constructor(documentId: string, fonts: Uint8Array[]) {
 		this.worker = new Worker(new URL('./compile-worker.ts', import.meta.url), { type: 'module' });
 		this.ready = new Promise((resolve, reject) => {
 			this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
@@ -36,7 +36,7 @@ export class ClientCompiler {
 			};
 			this.worker.onerror = (event) => reject(new Error(event.message || 'The compiler could not be started'));
 		});
-		this.send({ type: 'init', fonts });
+		this.send({ type: 'init', documentId, fonts });
 	}
 
 	private send(request: WorkerRequest) {

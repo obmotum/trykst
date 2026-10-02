@@ -6,6 +6,7 @@
 import { createTypstCompiler, FetchPackageRegistry, MemoryAccessModel, initOptions } from '@myriaddreamin/typst.ts';
 import type { TypstCompiler } from '@myriaddreamin/typst.ts';
 import type { IncrementalServer } from '@myriaddreamin/typst.ts/compiler';
+import type { PackageResolveContext, PackageSpec } from '@myriaddreamin/typst.ts/internal.types';
 import compilerWasm from '@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm?url';
 
 export interface WorkerFile {
@@ -25,7 +26,7 @@ export interface WorkerDiagnostic {
 }
 
 export type WorkerRequest =
-	| { type: 'init'; fonts: Uint8Array[] }
+	| { type: 'init'; documentId: string; fonts: Uint8Array[] }
 	| { type: 'files'; set: WorkerFile[]; remove: string[] }
 	| { type: 'compile'; id: number; main: string; full: boolean };
 
@@ -50,15 +51,55 @@ let hasBase = false;
 const post = (message: WorkerResponse, transfer: Transferable[] = []) =>
 	(self as DedicatedWorkerGlobalScope).postMessage(message, transfer);
 
-async function init(fonts: Uint8Array[]) {
+/**
+ * Packages: `@preview/...` from Typst Universe, and Trykst's own `@project/...`
+ * and `@trykst/...` from the server, which checks access through the document.
+ */
+class PackageRegistry extends FetchPackageRegistry {
+	private own = new Map<string, string>();
+
+	constructor(
+		private model: MemoryAccessModel,
+		private documentId: string
+	) {
+		super(model);
+	}
+
+	resolve(spec: PackageSpec, context: PackageResolveContext): string | undefined {
+		if (!['project', 'trykst', 'typstdrive'].includes(spec.namespace)) return super.resolve(spec, context);
+
+		const key = `${spec.namespace}/${spec.name}/${spec.version}`;
+		const known = this.own.get(key);
+		if (known) return known; // versions are immutable
+
+		// The compiler asks synchronously; a worker may block on a request.
+		const request = new XMLHttpRequest();
+		const parts = [spec.namespace, spec.name, spec.version].map(encodeURIComponent).join('/');
+		request.open('GET', `/api/documents/${this.documentId}/packages/${parts}`, false);
+		request.send(null);
+		if (request.status !== 200) return undefined; // not cached: it may be published later
+
+		const directory = `/@memory/trykst/${key}`;
+		for (const file of JSON.parse(request.responseText) as { path: string; data: string }[]) {
+			const bytes = Uint8Array.from(atob(file.data), (c) => c.charCodeAt(0));
+			this.model.insertFile(`${directory}/${file.path}`, bytes, new Date());
+		}
+		this.own.set(key, directory);
+		return directory;
+	}
+}
+
+async function init(documentId: string, fonts: Uint8Array[]) {
 	compiler = createTypstCompiler();
 	const model = new MemoryAccessModel();
+	// The same fonts the server exports with, from the server itself.
+	const builtIn: string[] = await (await fetch('/api/fonts/default')).json();
 	await compiler.init({
 		getModule: () => compilerWasm,
 		beforeBuild: [
-			initOptions.loadFonts(fonts, { assets: ['text'] }),
+			initOptions.loadFonts([...builtIn, ...fonts], { assets: false }),
 			initOptions.withAccessModel(model),
-			initOptions.withPackageRegistry(new FetchPackageRegistry(model))
+			initOptions.withPackageRegistry(new PackageRegistry(model, documentId))
 		]
 	});
 	// The incremental server lives as long as the worker: the callback never returns.
@@ -107,7 +148,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
 		.then(async () => {
 			switch (request.type) {
 				case 'init':
-					await init(request.fonts);
+					await init(request.documentId, request.fonts);
 					post({ type: 'ready' });
 					break;
 				case 'files':

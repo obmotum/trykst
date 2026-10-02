@@ -105,7 +105,7 @@
 			texts.clear();
 			pushed.clear();
 			const fonts = await Promise.all(files.filter(isFont).map(async (n) => (await fetchFile(n)).bytes!));
-			compiler = new ClientCompiler(fonts);
+			compiler = new ClientCompiler(docId, fonts);
 			compilerFonts = fontKey;
 			previewInSync = false;
 		}
