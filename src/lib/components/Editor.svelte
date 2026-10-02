@@ -8,7 +8,6 @@
 	import { Language, StreamLanguage } from '@codemirror/language';
 	import { toml } from '@codemirror/legacy-modes/mode/toml';
 	import { yCollab } from 'y-codemirror.next';
-	import { text, provider } from '../ts/yjs-setup';
 	import { getThemeExtension } from '../ts/themes';
 	import { themeStore, darkModeStore, editorViewStore, editorErrors, triggerLspReconnect } from '../ts/store';
 	import { page } from '$app/stores';
@@ -16,16 +15,19 @@
 	import { setDiagnostics, lintGutter } from '@codemirror/lint';
 
 	let {
-		ytext = undefined,
-		awarenessProvider = undefined,
+		ytext,
+		awarenessProvider,
 		lspDocId = undefined,
 		enableLsp = true,
 		filePath = undefined
 	}: {
-		ytext?: any;
-		awarenessProvider?: any;
+		/** The Yjs text of the file and the provider of its collaboration room. */
+		ytext: any;
+		awarenessProvider: any;
+		/** Document whose files the language server sees; defaults to the page's id. */
 		lspDocId?: string;
 		enableLsp?: boolean;
+		/** Path of the file inside the document, e.g. `chapters/intro.typ`. */
 		filePath?: string;
 	} = $props();
 
@@ -151,8 +153,8 @@
 	}
 
 	onMount(() => {
-		const activeText = ytext ?? text;
-		const activeProvider = awarenessProvider ?? provider;
+		const activeText = ytext;
+		const activeProvider = awarenessProvider;
 		if (!activeText || !activeProvider) return;
 
 		themeStore.subscribe(t => { currentTheme = t; })();
@@ -199,6 +201,7 @@
 		});
 		
 		editorViewStore.set(view);
+		view.focus();
 
 		unsubscribeErrors = editorErrors.subscribe((errors) => {
 			if (view) {
@@ -241,6 +244,7 @@
 		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 		const host = window.location.host;
 		const docId = lspDocId ?? $page.params.id;
+		const lspPath = (filePath ?? 'main.typ').split('/').map(encodeURIComponent).join('/');
 
 		let lsHandlers: ((value: string) => void)[] = [];
 		let lspInitialized = false;
@@ -276,7 +280,7 @@
 							}).connect(transport);
 
 							view.dispatch({
-								effects: lspCompartment.reconfigure(client.plugin(`${msg.rootUri}/${docId}.typ`, 'typst'))
+								effects: lspCompartment.reconfigure(client.plugin(`${msg.rootUri}/${lspPath}`, 'typst'))
 							});
 							return;
 						}

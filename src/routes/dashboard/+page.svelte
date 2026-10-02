@@ -1,654 +1,107 @@
 <script lang="ts">
-    import { goto } from '$app/navigation';
-    import { onMount } from 'svelte';
-    import { userStore, redirectToLogin } from '$lib/ts/auth';
-    import { themeStore, darkModeStore } from '$lib/ts/store';
-    import Icon from '@iconify/svelte';
-    import ThemePicker from '$lib/components/ThemePicker.svelte';
-    import Navbar from '$lib/components/dashboard/Navbar.svelte';
-    import FolderRow from '$lib/components/dashboard/FolderRow.svelte';
-    import DocCard from '$lib/components/dashboard/DocCard.svelte';
-    import FileCard from '$lib/components/dashboard/FileCard.svelte';
-    import ShareModal from '$lib/components/ShareModal.svelte';
-    import DeleteModal from '$lib/components/dashboard/DeleteModal.svelte';
-    import InfoModal from '$lib/components/dashboard/InfoModal.svelte';
-    import RenameModal from '$lib/components/dashboard/RenameModal.svelte';
-    import CreateDocModal from '$lib/components/dashboard/CreateDocModal.svelte';
-    import CreateSpaceModal from '$lib/components/dashboard/CreateSpaceModal.svelte';
-    import CreateFolderModal from '$lib/components/dashboard/CreateFolderModal.svelte';
-    import Footer from '$lib/components/Footer.svelte';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import Icon from '@iconify/svelte';
+	import { userStore } from '$lib/ts/auth';
+	import { api, formatDate } from '$lib/ts/api';
+	import type { Project } from '$lib/ts/api';
+	import Navbar from '$lib/components/dashboard/Navbar.svelte';
+	import Footer from '$lib/components/Footer.svelte';
+	import ProjectModal from '$lib/components/project/ProjectModal.svelte';
 
-    let documents = $state<any[]>([]);
-    let folders = $state<any[]>([]);
-    let files = $state<any[]>([]);
-    let currentFolderId = $state<string | null>(null);
-    const isGuest = $derived(!!$userStore?.is_guest);
-    let folderPath = $state<{id: string, name: string}[]>([]);
-    let showCreateFolderModal = $state(false);
-    let newFolderName = $state('');
-    let loading = $state(true);
-    let showCreateModal = $state(false);
-    let showCreateSpaceModal = $state(false);
-    let newDocTitle = $state('');
-    let showPlusDropdown = $state(false);
-    let dragOverFolderId = $state<string | null>(null);
-    let dragOverBreadcrumbIndex = $state<number | null>(null);
-    let fileInput = $state<HTMLInputElement | null>(null);
-    let importFileInput = $state<HTMLInputElement | null>(null);
-    let isImporting = $state(false);
-    
-    let showDeleteModal = $state(false);
-    let deleteTarget = $state<{id: string, type: 'document'|'folder'|'file', name: string} | null>(null);
+	let projects = $state<Project[]>([]);
+	let loading = $state(true);
+	let error = $state('');
+	let showCreate = $state(false);
 
-    function openDelete(id: string, type: 'document'|'folder'|'file', name: string) {
-        deleteTarget = { id, type, name };
-        showDeleteModal = true;
-        activeMenu = null;
-    }
+	// Guests work in the projects they were added to; they cannot open their own.
+	const isGuest = $derived(!!$userStore?.is_guest);
 
-    async function confirmDelete() {
-        if (!deleteTarget) return;
-        const { id, type } = deleteTarget;
-        
-        let endpoint = `/api/docs/${id}`;
-        if (type === 'folder') endpoint = `/api/folders/${id}`;
-        if (type === 'file') endpoint = `/api/files/${id}`;
+	async function createProject(name: string, description: string) {
+		const project = await api<Project>('POST', '/api/projects', { name, description });
+		goto(`/project/${project.id}`);
+	}
 
-        const res = await fetch(endpoint, { method: 'DELETE' });
-        if (res.ok) {
-            if (type === 'document') documents = documents.filter(d => d.id !== id);
-            if (type === 'folder') folders = folders.filter(f => f.id !== id);
-            if (type === 'file') files = files.filter(f => f.id !== id);
-        }
-        showDeleteModal = false;
-        deleteTarget = null;
-    }
-
-    async function handleFileUpload(e: Event) {
-        const target = e.target as HTMLInputElement;
-        if (!target.files || target.files.length === 0) return;
-
-        for (let i = 0; i < target.files.length; i++) {
-            const file = target.files[i];
-            
-            if (file.name.endsWith('.typ')) {
-                
-                const content = await file.text();
-                
-                const title = file.name.replace(/\.typ$/i, '');
-                
-                await fetch('/api/docs', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        title: title, 
-                        folder_id: currentFolderId || undefined,
-                        content: content
-                    })
-                });
-            } else {
-                
-                const formData = new FormData();
-                formData.append('file', file);
-                
-                const query = currentFolderId ? `?folder_id=${currentFolderId}` : '';
-                await fetch(`/api/files${query}`, {
-                    method: 'POST',
-                    body: formData
-                });
-            }
-        }
-        target.value = '';
-        loadDocs();
-    }
-
-    async function deleteFile(id: string, name: string) {
-        openDelete(id, 'file', name);
-    }
-
-    async function loadDocs() {
-        loading = true;
-        try {
-            const folderQuery = currentFolderId ? `?parent_id=${currentFolderId}` : '';
-            const docQuery = currentFolderId ? `?folder_id=${currentFolderId}` : '';
-            const fileQuery = currentFolderId ? `?folder_id=${currentFolderId}` : '';
-            
-            const [resFolders, resDocs, resFiles] = await Promise.all([
-                fetch(`/api/folders${folderQuery}`),
-                fetch(`/api/docs${docQuery}`),
-                fetch(`/api/files${fileQuery}`)
-            ]);
-            
-            if (resFolders.ok) {
-                folders = await resFolders.json();
-            }
-            if (resDocs.ok) {
-                documents = await resDocs.json();
-            }
-            if (resFiles.ok) {
-                files = await resFiles.json();
-            }
-        } finally {
-            loading = false;
-        }
-    }
-
-    function openCreateFolderModal() {
-        showPlusDropdown = false;
-        newFolderName = 'New Folder';
-        showCreateFolderModal = true;
-    }
-
-    async function createFolder(name: string) {
-        if (!name.trim()) return;
-
-        const body: any = { name: name.trim() };
-        if (currentFolderId) body.parent_id = currentFolderId;
-
-        const res = await fetch('/api/folders', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        
-        if (res.ok) {
-            showCreateFolderModal = false;
-            loadDocs();
-        }
-    }
-
-    function navigateToFolder(folder: {id: string, name: string}) {
-        folderPath = [...folderPath, folder];
-        currentFolderId = folder.id;
-        loadDocs();
-    }
-
-    function navigateToBreadcrumb(index: number) {
-        inSharedDrive = false;
-        if (index === -1) {
-            folderPath = [];
-            currentFolderId = null;
-        } else {
-            folderPath = folderPath.slice(0, index + 1);
-            currentFolderId = folderPath[folderPath.length - 1].id;
-        }
-        loadDocs();
-    }
-
-    async function deleteFolder(id: string, name: string) {
-        openDelete(id, 'folder', name);
-    }
-
-    function openCreateModal() {
-        showPlusDropdown = false;
-        newDocTitle = 'Untitled Document';
-        showCreateModal = true;
-    }
-
-    async function createDoc(title: string) {
-        if (!title.trim()) return;
-
-        const res = await fetch('/api/docs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: title.trim(), folder_id: currentFolderId || undefined })
-        });
-
-        if (res.ok) {
-            const doc = await res.json();
-            showCreateModal = false;
-            goto(`/doc/${doc.id}`);
-        }
-    }
-
-    function openCreateSpaceModal() {
-        showPlusDropdown = false;
-        showCreateSpaceModal = true;
-    }
-
-    async function createSpace(name: string) {
-        if (!name.trim()) return;
-
-        const res = await fetch('/api/spaces', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: name.trim(), folder_id: currentFolderId || undefined })
-        });
-
-        if (res.ok) {
-            const space = await res.json();
-            showCreateSpaceModal = false;
-            goto(`/space/${space.id}`);
-        }
-    }
-
-    async function handleImportUpload(e: Event) {
-        const target = e.target as HTMLInputElement;
-        if (!target.files || target.files.length === 0) return;
-        const file = target.files[0];
-        
-        isImporting = true;
-        showPlusDropdown = false;
-
-        try {
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            const res = await fetch('/api/import/pandoc', {
-                method: 'POST',
-                body: formData
-            });
-            
-            if (res.ok) {
-                const typstContent = await res.text();
-                const title = file.name.replace(/\.[^/.]+$/, "");
-                
-                const createRes = await fetch('/api/docs', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        title: title, 
-                        folder_id: currentFolderId || undefined,
-                        content: typstContent
-                    })
-                });
-                
-                if (createRes.ok) {
-                    const doc = await createRes.json();
-                    goto(`/doc/${doc.id}`);
-                } else {
-                    alert('Failed to create imported document.');
-                }
-            } else {
-                const err = await res.text();
-                alert(`Failed to import document: ${err}`);
-            }
-        } catch (err) {
-            console.error(err);
-            alert('Network error during import.');
-        } finally {
-            isImporting = false;
-            target.value = '';
-        }
-    }
-
-    async function deleteDoc(id: string, name: string) {
-        openDelete(id, 'document', name);
-    }
-
-    onMount(() => {
-        if (!$userStore) {
-            redirectToLogin();
-            return;
-        }
-
-        // Guests own nothing; start them where their shared documents are.
-        if ($userStore.is_guest) {
-            enterSharedDrive();
-            return;
-        }
-
-        loadDocs();
-    });
-
-    let activeMenu = $state<string | null>(null);
-
-    
-    function handleWindowClick(e: MouseEvent) {
-        const target = e.target as HTMLElement;
-        if (!target.closest('.plus-dropdown-container')) {
-            showPlusDropdown = false;
-        }
-        if (!target.closest('.action-menu-container')) {
-            activeMenu = null;
-        }
-    }
-
-    let showInfoModal = $state(false);
-    let selectedInfo = $state<any>(null);
-
-    let showRenameModal = $state(false);
-    let renameId = $state<string | null>(null);
-    let renameType = $state<'document'|'folder'|'file'>('document');
-    let renameTitle = $state('');
-
-    function openInfo(item: any, type: string) {
-        selectedInfo = { ...item, type };
-        showInfoModal = true;
-        activeMenu = null;
-    }
-
-    function openRename(id: string, currentTitle: string, type: 'document'|'folder'|'file') {
-        renameId = id;
-        renameTitle = currentTitle;
-        renameType = type;
-        showRenameModal = true;
-        activeMenu = null;
-    }
-
-    async function handleRename(newTitle: string) {
-        if (!newTitle.trim() || !renameId) return;
-
-        let endpoint = `/api/docs/${renameId}`;
-        if (renameType === 'folder') endpoint = `/api/folders/${renameId}`; 
-        if (renameType === 'file') return; 
-
-        const res = await fetch(endpoint, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: newTitle.trim(), name: newTitle.trim() })
-        });
-        
-        if (res.ok) {
-            showRenameModal = false;
-            loadDocs();
-        }
-    }
-
-    let inSharedDrive = $state(false);
-    let sharedDocs = $state<any[]>([]);
-    let sharedDocsLoading = $state(false);
-
-    async function loadSharedDocs() {
-        sharedDocsLoading = true;
-        try {
-            const res = await fetch('/api/docs/shared');
-            if (res.ok) sharedDocs = await res.json();
-        } catch {}
-        sharedDocsLoading = false;
-    }
-
-    function enterSharedDrive() {
-        inSharedDrive = true;
-        folderPath = [];
-        currentFolderId = null;
-        loadSharedDocs();
-    }
-
-    let showShareModal = $state(false);
-    let shareTarget = $state<any>(null);
-
-    function shareItem(item: any) {
-        
-        showShareModal = true;
-        shareTarget = item;
-        activeMenu = null;
-    }
-
-    async function handleDrop(e: DragEvent, targetFolderId: string | null) {
-        e.preventDefault();
-        dragOverFolderId = null;
-        dragOverBreadcrumbIndex = null;
-        
-        const dataString = e.dataTransfer?.getData('text/plain');
-        if (!dataString) return;
-
-        try {
-            let data;
-            try {
-                data = JSON.parse(dataString);
-            } catch (err) {
-                data = { type: 'document', id: dataString };
-            }
-
-            const { type, id } = data;
-            
-            let endpoint = '';
-            if (type === 'document') {
-                endpoint = `/api/docs/${id}`;
-            } else if (type === 'file') {
-                endpoint = `/api/files/${id}`;
-            } else {
-                return;
-            }
-
-            const res = await fetch(endpoint, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ folder_id: targetFolderId || "" })
-            });
-            
-            if (res.ok) {
-                loadDocs();
-            }
-        } catch (err) {
-            console.error('Failed to move item', err);
-        }
-    }
+	onMount(async () => {
+		try {
+			projects = await api<Project[]>('GET', '/api/projects');
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load projects';
+		}
+		loading = false;
+	});
 </script>
 
 <svelte:head>
-	<title>Dashboard - Trykst</title>
-	<meta name="description" content="Manage your Typst documents and folders." />
+	<title>Projects - Trykst</title>
+	<meta name="description" content="Your Trykst projects." />
 </svelte:head>
 
-<svelte:window onclick={handleWindowClick} />
-
 <div class="min-h-screen flex flex-col">
-    
-    <Navbar />
+	<Navbar />
 
-    
-    <main class="max-w-7xl w-full mx-auto py-10 px-4 sm:px-6 lg:px-8 grow block">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{isGuest ? 'Shared with me' : 'My Documents'}</h2>
-            
-            {#if !isGuest}
-            <div class="relative plus-dropdown-container">
-                <button onclick={() => showPlusDropdown = !showPlusDropdown} class="flex items-center justify-center text-[var(--theme-text)] bg-[var(--theme-border)] opacity-90 hover:opacity-100 w-10 h-10 rounded-full shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 border border-white/10 dark:border-black/20">
-                    <Icon icon="mdi:plus" class="text-2xl" />
-                </button>
+	<main class="max-w-7xl w-full mx-auto py-10 px-4 sm:px-6 lg:px-8 grow">
+		<div class="flex justify-between items-center mb-8">
+			<div>
+				<h2 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">Projects</h2>
+				<p class="text-sm text-gray-500 dark:text-gray-400 mt-1">A project holds documents and the people who work on them.</p>
+			</div>
+			{#if !isGuest}
+				<button onclick={() => (showCreate = true)} class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg shadow-sm text-sm font-medium transition-colors">
+					<Icon icon="mdi:plus" class="text-lg" /> New project
+				</button>
+			{/if}
+		</div>
 
-                {#if showPlusDropdown}
-                    <div class="absolute right-0 mt-2 w-48 bg-[var(--theme-bg)] rounded-lg shadow-xl border border-gray-200 dark:border-white/10 py-1 z-20">
-                        <button onclick={openCreateModal} class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2">
-                            <Icon icon="mdi:file-document-plus" class="text-lg text-blue-500" />
-                            New Document
-                        </button>
-                        <button onclick={openCreateSpaceModal} class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2">
-                            <Icon icon="mdi:folder-multiple-plus" class="text-lg text-indigo-500" />
-                            New Space
-                        </button>
-                        <button onclick={openCreateFolderModal} class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2">
-                            <Icon icon="mdi:folder-plus" class="text-lg text-yellow-500" />
-                            New Folder
-                        </button>
-                        <button onclick={() => { showPlusDropdown = false; fileInput?.click(); }} class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2">
-                            <Icon icon="mdi:upload" class="text-lg text-green-500" />
-                            Upload File
-                        </button>
-                        <div class="h-px bg-gray-200 dark:bg-white/10 my-1"></div>
-                        <button onclick={() => { showPlusDropdown = false; importFileInput?.click(); }} class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2" disabled={isImporting}>
-                            {#if isImporting}
-                                <Icon icon="mdi:loading" class="text-lg text-purple-500 animate-spin" />
-                                Importing...
-                            {:else}
-                                <Icon icon="mdi:file-import" class="text-lg text-purple-500" />
-                                Import (.docx, .tex, .md)
-                            {/if}
-                        </button>
-                    </div>
-                {/if}
-                <input type="file" bind:this={fileInput} accept="image/*,font/*,.typ,.ttf,.otf" multiple onchange={handleFileUpload} class="hidden" />
-                <input type="file" bind:this={importFileInput} accept=".docx,.tex,.md,.html" onchange={handleImportUpload} class="hidden" />
-            </div>
-            {/if}
-        </div>
+		{#if loading}
+			<div class="min-h-[40vh] flex items-center justify-center text-gray-500 dark:text-gray-400">
+				<Icon icon="mdi:loading" class="text-4xl animate-spin" />
+			</div>
+		{:else if error}
+			<p class="text-red-600 dark:text-red-400" role="alert">{error}</p>
+		{:else if projects.length === 0}
+			<div class="text-center py-16">
+				<div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 mb-4">
+					<Icon icon="mdi:folder-account-outline" class="text-3xl" />
+				</div>
+				<h3 class="text-lg font-bold text-gray-900 dark:text-white mb-1">No projects yet</h3>
+				{#if isGuest}
+					<p class="text-gray-500 dark:text-gray-400 text-sm">Projects you are added to appear here.</p>
+				{:else}
+					<p class="text-gray-500 dark:text-gray-400 mb-6 text-sm">Create a project, add documents to it and invite the people you work with.</p>
+					<button onclick={() => (showCreate = true)} class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg shadow-sm text-sm font-medium transition-colors">
+						<Icon icon="mdi:plus" class="text-lg" /> Create project
+					</button>
+				{/if}
+			</div>
+		{:else}
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+				{#each projects as project (project.id)}
+					<a href="/project/{project.id}" class="group bg-white dark:bg-black/20 rounded-xl shadow-sm border border-gray-200 dark:border-white/10 p-5 flex flex-col gap-3 hover:shadow-lg hover:border-blue-400 dark:hover:border-blue-500/50 transition-all duration-200 hover:-translate-y-0.5">
+						<div class="flex items-start gap-3">
+							<div class="p-2.5 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-lg flex-shrink-0">
+								<Icon icon="mdi:folder-account" class="text-2xl" />
+							</div>
+							<div class="min-w-0 flex-1">
+								<h3 class="text-lg font-semibold text-gray-900 dark:text-white truncate" title={project.name}>{project.name}</h3>
+								<p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 min-h-[2.5rem]">{project.description ?? ''}</p>
+							</div>
+							<span class="flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full capitalize {project.role === 'owner' ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300' : project.role === 'editor' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400'}">{project.role}</span>
+						</div>
+						<div class="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 mt-auto pt-2 border-t border-gray-100 dark:border-white/5">
+							<span class="flex items-center gap-1"><Icon icon="mdi:file-document-multiple-outline" class="text-sm" /> {project.document_count} {project.document_count === 1 ? 'document' : 'documents'}</span>
+							<span class="flex items-center gap-1"><Icon icon="mdi:account-multiple-outline" class="text-sm" /> {project.member_count}</span>
+							<span class="flex items-center gap-1 ml-auto"><Icon icon="mdi:clock-outline" class="text-sm" /> {formatDate(project.updated_at)}</span>
+						</div>
+					</a>
+				{/each}
+			</div>
+		{/if}
+	</main>
 
-        
-        <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-6 bg-white/50 dark:bg-black/20 p-3 rounded-lg border border-gray-200 dark:border-white/10">
-            <button
-                onclick={() => navigateToBreadcrumb(-1)}
-                ondragover={(e) => { e.preventDefault(); dragOverBreadcrumbIndex = -1; }}
-                ondragleave={() => dragOverBreadcrumbIndex = null}
-                ondrop={(e) => handleDrop(e, null)}
-                class="hover:text-blue-600 dark:hover:text-blue-400 font-medium transition-colors px-2 py-1 rounded {dragOverBreadcrumbIndex === -1 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : ''}">
-                <Icon icon="mdi:home" class="text-lg inline-block pb-0.5" /> Home
-            </button>
-            {#if inSharedDrive}
-                <Icon icon="mdi:chevron-right" class="text-lg text-gray-400" />
-                <span class="font-medium text-purple-600 dark:text-purple-400 flex items-center gap-1 px-2 py-1">
-                    <Icon icon="mdi:folder-account" class="text-base" /> Shared with me
-                </span>
-            {:else}
-                {#each folderPath as folder, index}
-                    <Icon icon="mdi:chevron-right" class="text-lg text-gray-400" />
-                    <button
-                        onclick={() => navigateToBreadcrumb(index)}
-                        ondragover={(e) => { e.preventDefault(); dragOverBreadcrumbIndex = index; }}
-                        ondragleave={() => dragOverBreadcrumbIndex = null}
-                        ondrop={(e) => handleDrop(e, folder.id)}
-                        class="hover:text-blue-600 dark:hover:text-blue-400 font-medium transition-colors px-2 py-1 rounded {dragOverBreadcrumbIndex === index ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : ''}">
-                        {folder.name}
-                    </button>
-                {/each}
-            {/if}
-        </div>
-
-        {#if inSharedDrive}
-            {#if sharedDocsLoading}
-                <div class="min-h-[50vh] flex items-center justify-center">
-                    <div class="flex flex-col items-center gap-4 text-gray-500 dark:text-gray-400 animate-pulse">
-                        <Icon icon="mdi:loading" class="text-4xl animate-spin" />
-                        <p class="text-lg font-medium">Loading shared documents...</p>
-                    </div>
-                </div>
-            {:else if sharedDocs.length === 0}
-                <div class="min-h-[50vh] flex items-center justify-center">
-                    <div class="text-center p-12 bg-white/50 dark:bg-black/20 rounded-2xl shadow-sm border border-gray-200 dark:border-white/10 max-w-md w-full">
-                        <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-purple-100/50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 mb-6">
-                            <Icon icon="mdi:folder-account-outline" class="text-4xl" />
-                        </div>
-                        <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">No shared documents</h3>
-                        <p class="text-gray-500 dark:text-gray-400">Documents shared with you by other users will appear here.</p>
-                    </div>
-                </div>
-            {:else}
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {#each sharedDocs as doc}
-                        <DocCard
-                            {doc}
-                            {activeMenu}
-                            setActiveMenu={(id) => activeMenu = id}
-                            {openInfo}
-                            openRename={() => {}}
-                            {shareItem}
-                            deleteDoc={() => {}}
-                        />
-                    {/each}
-                </div>
-            {/if}
-
-        {:else if loading}
-            <div class="min-h-[50vh] flex items-center justify-center">
-                <div class="flex flex-col items-center gap-4 text-gray-500 dark:text-gray-400 animate-pulse">
-                    <Icon icon="mdi:loading" class="text-4xl animate-spin" />
-                    <p class="text-lg font-medium">Loading your workspace...</p>
-                </div>
-            </div>
-        {:else}
-            {#if currentFolderId === null || folders.length > 0}
-                <div class="mb-8">
-                    <div class="px-2 py-3 text-sm font-semibold text-gray-700 dark:text-gray-300">Folders</div>
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                        {#if currentFolderId === null}
-                            <div
-                                class="flex flex-row items-center p-3 bg-white/50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl shadow-sm hover:shadow-md cursor-pointer group transition-all duration-200 hover:-translate-y-0.5 hover:border-purple-300 dark:hover:border-purple-500/30"
-                                role="button"
-                                tabindex="0"
-                                onclick={enterSharedDrive}
-                                onkeydown={(e) => e.key === 'Enter' && enterSharedDrive()}
-                            >
-                                <div class="flex items-center justify-center w-10 h-10 bg-purple-50 dark:bg-purple-500/10 rounded-lg group-hover:scale-105 transition-transform pointer-events-none shrink-0 mr-3">
-                                    <Icon icon="mdi:folder-account" class="text-2xl text-purple-500" />
-                                </div>
-                                <span class="font-medium text-gray-900 dark:text-white text-sm truncate w-full pointer-events-none">Shared with me</span>
-                            </div>
-                        {/if}
-                        {#each folders as folder}
-                            <FolderRow
-                                {folder}
-                                {dragOverFolderId}
-                                {navigateToFolder}
-                                {handleDrop}
-                                {deleteFolder}
-                                setDragOverFolderId={(id) => dragOverFolderId = id}
-                            />
-                        {/each}
-                    </div>
-                </div>
-            {/if}
-
-            {#if documents.length > 0 || files.length > 0}
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {#each documents as doc}
-                        <DocCard
-                            {doc}
-                            {activeMenu}
-                            setActiveMenu={(id) => activeMenu = id}
-                            {openInfo}
-                            {openRename}
-                            {shareItem}
-                            {deleteDoc}
-                        />
-                    {/each}
-                    {#each files as file}
-                        <FileCard {file} {deleteFile} />
-                    {/each}
-                </div>
-            {/if}
-
-            {#if documents.length === 0 && files.length === 0 && currentFolderId !== null && folders.length === 0}
-                <div class="min-h-[30vh] flex items-center justify-center">
-                    <p class="text-gray-500 dark:text-gray-400">This folder is empty.</p>
-                </div>
-            {:else if documents.length === 0 && files.length === 0 && folders.length === 0 && currentFolderId === null}
-                <div class="text-center py-12">
-                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 mb-4">
-                        <Icon icon="mdi:file-document-outline" class="text-3xl" />
-                    </div>
-                    <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-1">No documents yet</h3>
-                    <p class="text-gray-500 dark:text-gray-400 mb-6 text-sm">Create your first Typst document to get started.</p>
-                    {#if !isGuest}
-                    <button onclick={openCreateModal} class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg shadow-sm text-sm font-medium transition-colors">
-                        <Icon icon="mdi:plus" class="text-lg" />
-                        Create Document
-                    </button>
-                    {/if}
-                </div>
-            {/if}
-        {/if}
-
-{#if showShareModal && shareTarget}
-    
-    <ShareModal docId={shareTarget.id} onClose={() => showShareModal = false} />
-{/if}
-
-{#if showDeleteModal && deleteTarget}
-    <DeleteModal {deleteTarget} {confirmDelete} onClose={() => showDeleteModal = false} />
-{/if}
-
-{#if showInfoModal && selectedInfo}
-    <InfoModal {selectedInfo} onClose={() => showInfoModal = false} />
-{/if}
-
-{#if showRenameModal}
-    <RenameModal initialTitle={renameTitle} {handleRename} onClose={() => showRenameModal = false} />
-{/if}
-
-{#if showCreateModal}
-    <CreateDocModal {createDoc} onClose={() => showCreateModal = false} />
-{/if}
-
-{#if showCreateSpaceModal}
-    <CreateSpaceModal {createSpace} onClose={() => showCreateSpaceModal = false} />
-{/if}
-
-{#if showCreateFolderModal}
-    <CreateFolderModal {createFolder} onClose={() => showCreateFolderModal = false} />
-{/if}
-
-    </main>
-
-    <Footer sticky={false} />
+	<Footer sticky={false} />
 </div>
+
+{#if showCreate}
+	<ProjectModal title="New project" submitLabel="Create" onSubmit={createProject} onClose={() => (showCreate = false)} />
+{/if}

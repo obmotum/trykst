@@ -3,14 +3,8 @@
 	import { goto } from '$app/navigation';
 	import Icon from '@iconify/svelte';
 	import Navbar from '$lib/components/dashboard/Navbar.svelte';
-
-	interface Package {
-		id: string;
-		name: string;
-		description?: string;
-		owner_name?: string;
-		latest_version?: string;
-	}
+	import { userStore } from '$lib/ts/auth';
+	import type { Package } from '$lib/ts/api';
 
 	let packages = $state<Package[]>([]);
 	let loading = $state(true);
@@ -34,8 +28,8 @@
 	}
 
 	async function remove(pkg: Package) {
-		if (!confirm(`Delete package "${pkg.name}" and all its versions?`)) return;
-		const res = await fetch(`/api/packages/${pkg.name}`, { method: 'DELETE' });
+		if (!confirm(`Delete package "${pkg.name}" and all its versions? Documents importing it will no longer compile.`)) return;
+		const res = await fetch(`/api/packages/${pkg.id}`, { method: 'DELETE' });
 		if (res.ok) packages = packages.filter((p) => p.id !== pkg.id);
 	}
 
@@ -53,15 +47,16 @@
 		<div class="mb-6">
 			<button onclick={() => goto('/dashboard')} class="text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors mb-2 flex items-center gap-1.5">
 				<Icon icon="mdi:arrow-left" class="text-lg" />
-				Back to Dashboard
+				Projects
 			</button>
 			<h2 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
 				<Icon icon="mdi:package-variant-closed" class="text-purple-500" />
 				Packages
 			</h2>
 			<p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-				Instance-local Typst packages, published from Spaces and importable as
+				Packages for everyone on this instance, published by admins and importable in any document as
 				<code class="font-mono text-xs bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">@trykst/&lt;name&gt;:&lt;version&gt;</code>.
+				Packages of a single project are listed on the project page.
 			</p>
 		</div>
 
@@ -70,7 +65,7 @@
 		{:else if packages.length === 0}
 			<div class="text-center py-16 text-gray-500 dark:text-gray-400">
 				<Icon icon="mdi:package-variant" class="text-5xl mx-auto mb-3 opacity-50" />
-				<p>No packages published yet. Open a Space and use “Publish” to create one.</p>
+				<p>No instance-wide packages yet.{#if $userStore?.is_admin} Open a document with a typst.toml and choose File → Publish as package.{/if}</p>
 			</div>
 		{:else}
 			<div class="space-y-3">
@@ -94,9 +89,11 @@
 								<Icon icon={copied === pkg.id ? 'mdi:check' : 'mdi:content-copy'} class="text-sm" />
 								{copied === pkg.id ? 'Copied' : 'Copy'}
 							</button>
-							<button onclick={() => remove(pkg)} title="Delete" class="text-xs px-2 py-1 rounded-md text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-1">
-								<Icon icon="mdi:trash-can-outline" class="text-sm" /> Delete
-							</button>
+							{#if $userStore?.is_admin}
+								<button onclick={() => remove(pkg)} title="Delete" class="text-xs px-2 py-1 rounded-md text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-1">
+									<Icon icon="mdi:trash-can-outline" class="text-sm" /> Delete
+								</button>
+							{/if}
 						</div>
 					</div>
 				{/each}

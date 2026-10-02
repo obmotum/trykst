@@ -276,6 +276,7 @@ pub async fn list_documents(
     .map_err(db_err)?;
     for doc in &mut docs {
         doc.role = Some(role.as_str().to_string());
+        doc.is_member = true;
     }
     Ok(Json(docs))
 }

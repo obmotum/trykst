@@ -10,9 +10,9 @@
 	let { children } = $props();
 	let loaded = $state(false);
 
-	// Pages that anonymous visitors may open: documents and spaces can be public,
-	// and those pages send the visitor to sign-in themselves when access is denied.
-	const PUBLIC_PREFIXES = ['/doc/', '/space/', '/api-docs'];
+	// Pages that anonymous visitors may open: documents can be shared by link, and
+	// the document page sends the visitor to sign-in itself when access is denied.
+	const PUBLIC_PREFIXES = ['/doc/', '/api-docs'];
 
 	onMount(async () => {
 		await fetchUser();

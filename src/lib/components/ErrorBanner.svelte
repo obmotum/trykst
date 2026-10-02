@@ -14,7 +14,7 @@
 			{#each errors as error}
 				<li class="flex items-start gap-2">
 					<span class="text-red-300">[{error.severity}]</span>
-					<span>{error.message}</span>
+					<span>{#if error.path}<span class="text-red-200">{error.path}:</span>{' '}{/if}{error.message}</span>
 				</li>
 			{/each}
 		</ul>

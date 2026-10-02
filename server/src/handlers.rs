@@ -72,6 +72,12 @@ fn map_diagnostics(diags: Diagnostics) -> Vec<Diagnostic> {
         .map(|(d, range)| Diagnostic {
             message: d.message.to_string(),
             severity: format!("{:?}", d.severity),
+            // Files of the document only; errors inside packages have no path here.
+            path: d
+                .span
+                .id()
+                .filter(|id| matches!(id.root(), typst::syntax::VirtualRoot::Project))
+                .map(|id| id.vpath().get_without_slash().replace('\\', "/")),
             from: range.as_ref().map(|r| r.start),
             to: range.as_ref().map(|r| r.end),
         })
@@ -89,6 +95,8 @@ pub struct CompileResponse {
 pub struct Diagnostic {
     pub message: String,
     pub severity: String,
+    /// The file `from` and `to` refer to, relative to the document root.
+    pub path: Option<String>,
     pub from: Option<usize>,
     pub to: Option<usize>,
 }
@@ -96,7 +104,7 @@ pub struct Diagnostic {
 fn error_response(message: String) -> CompileResponse {
     CompileResponse {
         svgs: None,
-        errors: Some(vec![Diagnostic { message, severity: "Error".to_string(), from: None, to: None }]),
+        errors: Some(vec![Diagnostic { message, severity: "Error".to_string(), path: None, from: None, to: None }]),
         stats: None,
     }
 }

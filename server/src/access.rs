@@ -123,6 +123,7 @@ pub async fn document_access(
     if let Some(uid) = user_id {
         if let Some(role) = project_role(state, &doc.project_id, uid).await? {
             doc.role = Some(role.as_str().to_string());
+            doc.is_member = true;
             return Ok(Some(DocAccess { doc, role, is_member: true }));
         }
     }

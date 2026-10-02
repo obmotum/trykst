@@ -137,6 +137,10 @@ pub struct Document {
     /// The caller's effective role on the document.
     #[sqlx(default)]
     pub role: Option<String>,
+    /// True when that role comes from project membership rather than link sharing.
+    #[sqlx(skip)]
+    #[serde(default)]
+    pub is_member: bool,
 }
 
 #[derive(Debug, Deserialize)]
