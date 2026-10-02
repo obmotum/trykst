@@ -461,15 +461,30 @@ pub async fn lsp_handler(
             let _ = std::fs::write(&path, data);
         }
 
-        let mut child = Command::new("tinymist")
+        let spawned = Command::new("tinymist")
             .arg("lsp")
             .arg("--font-path")
             .arg(temp_dir.path())
             .current_dir(temp_dir.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .spawn()
-            .expect("Failed to start tinymist lsp");
+            .kill_on_drop(true)
+            .spawn();
+        let mut child = match spawned {
+            Ok(child) => child,
+            Err(e) => {
+                // Editing works without the language server; say so once instead of
+                // failing on every opened file.
+                static WARNED: std::sync::Once = std::sync::Once::new();
+                WARNED.call_once(|| {
+                    tracing::warn!(
+                        "Language server features (completion, hover) are off: could not start tinymist ({e}). \
+                         Install tinymist and put it on the PATH to enable them."
+                    );
+                });
+                return;
+            }
+        };
 
         let mut stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
