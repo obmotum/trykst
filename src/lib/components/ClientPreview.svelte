@@ -1,7 +1,7 @@
 <script lang="ts" module>
 	import { createTypstRenderer } from '@myriaddreamin/typst.ts';
 	import type { TypstRenderer } from '@myriaddreamin/typst.ts';
-	import rendererWasm from '@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm?url';
+	import { rendererWasm } from '../ts/compiler-assets';
 
 	// One renderer for the whole application; each preview gets its own session.
 	let rendererPromise: Promise<TypstRenderer> | undefined;

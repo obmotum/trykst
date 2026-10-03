@@ -1,4 +1,5 @@
 import type { Diagnostic } from './typst-api';
+import { compilerWasm, rendererWasm } from './compiler-assets';
 import type { DocumentInsights, WorkerDiagnostic, WorkerFile, WorkerRequest, WorkerResponse } from './compile-worker';
 
 export type { DocumentInsights, WorkerFile };
@@ -40,7 +41,7 @@ export class ClientCompiler {
 			};
 			this.worker.onerror = (event) => reject(new Error(event.message || 'The compiler could not be started'));
 		});
-		this.send({ type: 'init', documentId, fonts });
+		this.send({ type: 'init', documentId, fonts, compilerWasm, rendererWasm });
 	}
 
 	private send(request: WorkerRequest) {

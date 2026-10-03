@@ -6,6 +6,7 @@
 	import { page } from '$app/stores';
 	import { themeStore, darkModeStore } from '$lib/ts/store';
 	import { themes } from '$lib/ts/themes';
+	import { prefetchCompiler } from '$lib/ts/compiler-assets';
 
 	let { children } = $props();
 	let loaded = $state(false);
@@ -23,6 +24,8 @@
 		}
 		watchSessionLoss();
 		loaded = true;
+		// Signed in and not in the editor yet: get the compiler for the preview ready meanwhile.
+		if (get(userStore) && !path.startsWith('/doc/')) prefetchCompiler();
 	});
 
 	let currentTheme = $derived(themes[$themeStore as keyof typeof themes] || themes['Catppuccin']);

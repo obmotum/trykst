@@ -7,8 +7,6 @@ import { createTypstCompiler, createTypstRenderer, FetchPackageRegistry, MemoryA
 import type { TypstCompiler, TypstRenderer } from '@myriaddreamin/typst.ts';
 import type { IncrementalServer } from '@myriaddreamin/typst.ts/compiler';
 import type { PackageResolveContext, PackageSpec } from '@myriaddreamin/typst.ts/internal.types';
-import compilerWasm from '@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm?url';
-import rendererWasm from '@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm?url';
 
 export interface WorkerFile {
 	/** Absolute path inside the document, e.g. `/chapters/intro.typ`. */
@@ -27,7 +25,7 @@ export interface WorkerDiagnostic {
 }
 
 export type WorkerRequest =
-	| { type: 'init'; documentId: string; fonts: Uint8Array[] }
+	| { type: 'init'; documentId: string; fonts: Uint8Array[]; compilerWasm: string; rendererWasm: string }
 	| { type: 'files'; set: WorkerFile[]; remove: string[] }
 	| { type: 'compile'; id: number; main: string; full: boolean }
 	| { type: 'insights'; id: number; thumbnail: boolean };
@@ -57,6 +55,8 @@ export type WorkerResponse =
 	| { type: 'insights'; id: number; insights?: DocumentInsights };
 
 let compiler: TypstCompiler;
+/** URLs of the WebAssembly files, the same the page uses (and may have loaded already). */
+let wasmUrls = { compiler: '', renderer: '' };
 let incremental: IncrementalServer;
 /** False until the page has received a full artifact that deltas can build on. */
 let hasBase = false;
@@ -108,7 +108,7 @@ async function init(documentId: string, fonts: Uint8Array[]) {
 	// The same fonts the server exports with, from the server itself.
 	const builtIn: string[] = await (await fetch('/api/fonts/default')).json();
 	await compiler.init({
-		getModule: () => compilerWasm,
+		getModule: () => wasmUrls.compiler,
 		beforeBuild: [
 			initOptions.loadFonts([...builtIn, ...fonts], { assets: false }),
 			initOptions.withAccessModel(model),
@@ -161,7 +161,7 @@ let rendererPromise: Promise<TypstRenderer> | undefined;
 function getRenderer(): Promise<TypstRenderer> {
 	return (rendererPromise ??= (async () => {
 		const renderer = createTypstRenderer();
-		await renderer.init({ getModule: () => rendererWasm });
+		await renderer.init({ getModule: () => wasmUrls.renderer });
 		return renderer;
 	})());
 }
@@ -254,6 +254,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
 		.then(async () => {
 			switch (request.type) {
 				case 'init':
+					wasmUrls = { compiler: request.compilerWasm, renderer: request.rendererWasm };
 					await init(request.documentId, request.fonts);
 					post({ type: 'ready' });
 					break;
