@@ -116,6 +116,7 @@ Register these URLs at the IdP:
 | `OIDC_DIRECTORY_ORG_SOURCE` | `attribute` | `attribute` or `organizations` (Keycloak Organizations). |
 | `OIDC_DIRECTORY_ORG_ATTRIBUTE` | `organization` | User attribute shown as organization when the source is `attribute`. |
 | `SESSION_MAX_AGE_HOURS` | `10` | Maximum session length before a (silent) re-login at the IdP. |
+| `TRYKST_LANGUAGE_SERVER` | `true` | Completion and hover help in the editor via `tinymist`, which runs on the server as one process per open file. Set to `false` to save that load. |
 | `DATABASE_URL` | `sqlite:///data/trykst.db?mode=rwc` | SQLite or `postgres://user:pass@host:5432/trykst`. |
 | `DB_TYPE` | auto | `sqlite` or `postgres`. |
 | `PORT` | `3000` | HTTP port. |

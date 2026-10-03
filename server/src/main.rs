@@ -62,6 +62,9 @@ async fn main() {
         .init();
 
     tracing::info!("Starting Trykst Server");
+    if !handlers::language_server_enabled() {
+        tracing::info!("Language server turned off (TRYKST_LANGUAGE_SERVER=false)");
+    }
 
     let db = db::init_db().await;
 
@@ -146,6 +149,7 @@ async fn main() {
         .route("/packages/{id}/versions", get(packages::list_versions))
         // What the compiler in the browser needs: packages and the built-in fonts
         .route("/documents/{id}/packages/{namespace}/{name}/{version}", get(packages::package_files))
+        .route("/features", get(handlers::features))
         .route("/fonts/default", get(handlers::default_fonts))
         .route("/fonts/default/{index}", get(handlers::default_font));
 

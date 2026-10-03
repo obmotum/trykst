@@ -261,6 +261,8 @@ bundle = alice.check("package files for the browser", "GET", f"/api/documents/{d
 expect({"typst.toml", "lib.typ"} <= {f["path"] for f in bundle}, "package bundle has manifest and entrypoint")
 alice.check("unknown package version", "GET", f"/api/documents/{did}/packages/project/gruss/9.9.9", expect=(404,))
 bob.check("package files need document access", "GET", f"/api/documents/{did}/packages/project/gruss/0.1.0", expect=(404,))
+features = alice.check("instance features", "GET", "/api/features") or {}
+expect(isinstance(features.get("language_server"), bool), "features say whether the language server is on")
 fonts = alice.check("built-in fonts", "GET", "/api/fonts/default") or []
 expect(len(fonts) > 0, "server lists its built-in fonts")
 

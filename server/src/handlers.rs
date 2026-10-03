@@ -444,12 +444,32 @@ pub async fn pandoc_import_handler(
 
 
 /// Language server for a document: tinymist runs on a copy of all its files.
+/// Whether the editor gets a language server (tinymist, one process per open
+/// file on this server). On by default; `TRYKST_LANGUAGE_SERVER=false` turns it off.
+pub fn language_server_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        !matches!(
+            std::env::var("TRYKST_LANGUAGE_SERVER").map(|v| v.to_ascii_lowercase()).as_deref(),
+            Ok("false" | "0" | "off" | "no")
+        )
+    })
+}
+
+/// What the frontend should offer on this instance.
+pub async fn features() -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "language_server": language_server_enabled() }))
+}
+
 pub async fn lsp_handler(
     ws: axum::extract::ws::WebSocketUpgrade,
     Path(id): Path<String>,
     State(state): State<AppState>,
     jar: SignedCookieJar,
 ) -> Result<Response, ApiError> {
+    if !language_server_enabled() {
+        return Err((StatusCode::NOT_FOUND, "The language server is turned off on this instance".to_string()));
+    }
     let user = session_user(&jar);
     let access = require_document(&state, &id, user.as_deref(), Role::Viewer).await?;
     let (_, files_map) = document_files(&state, &access.doc, &HashMap::new()).await?;
