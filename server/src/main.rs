@@ -128,6 +128,7 @@ async fn main() {
         .route("/documents/{id}/upload", post(documents::upload_files))
         .route("/documents/{id}/entrypoint", put(documents::set_entrypoint))
         .route("/documents/{id}/fonts", get(documents::list_fonts))
+        .route("/documents/{id}/thumbnail", put(documents::set_thumbnail))
         .route("/documents/{id}/versions", get(documents::list_versions).post(documents::create_version))
         .route("/documents/{id}/versions/{version_id}", get(documents::get_version))
         .route("/documents/{id}/versions/{version_id}/restore", post(documents::restore_version))

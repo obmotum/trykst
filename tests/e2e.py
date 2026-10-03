@@ -87,8 +87,10 @@ class Session:
             sys.exit(f"Sign-in of {self.user} failed: HTTP {status} at {url}\n{page[:500]}")
         return json.loads(page)
 
-    def check(self, name, method, path, body=None, expect=(200, 201, 204), files=None, fields=None):
-        if files is not None:
+    def check(self, name, method, path, body=None, expect=(200, 201, 204), files=None, fields=None, raw=None):
+        if raw is not None:
+            data, headers = raw, {"Content-Type": "image/svg+xml"}
+        elif files is not None:
             data, headers = multipart(fields or {}, files)
         elif body is not None:
             data, headers = json.dumps(body).encode(), {"Content-Type": "application/json"}
@@ -206,6 +208,8 @@ alice.check("image cannot be the entrypoint", "PUT", f"/api/documents/{did}/entr
 pdf = alice.check("export PDF", "POST", "/api/export/pdf", {"document_id": did})
 expect(isinstance(pdf, bytes) and pdf.startswith(b"%PDF"), "export returns a PDF")
 alice.check("list fonts", "GET", f"/api/documents/{did}/fonts")
+alice.check("browser sets the thumbnail", "PUT", f"/api/documents/{did}/thumbnail", raw=b'<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+alice.check("thumbnail must be an SVG", "PUT", f"/api/documents/{did}/thumbnail", raw=b"<script>x</script>", expect=(400,))
 
 # --- Versions and comments ------------------------------------------------------------
 version = alice.check("create version", "POST", f"/api/documents/{did}/versions", {"label": "v1"}) or {}
@@ -282,6 +286,7 @@ expect(len(members) == 3, "project has three members")
 projects = bob.check("viewer lists projects", "GET", "/api/projects") or []
 expect(any(p["id"] == pid for p in projects), "project appears for the new member")
 bob.check("viewer reads document", "GET", f"/api/documents/{did}/tree")
+bob.check("viewer cannot set the thumbnail", "PUT", f"/api/documents/{did}/thumbnail", raw=b"<svg></svg>", expect=(403,))
 bob.check("viewer cannot write", "PATCH", f"/api/documents/{did}/nodes/{main.get('id')}",
           {"content": "x"}, expect=(403,))
 bob.check("viewer cannot create documents", "POST", f"/api/projects/{pid}/documents",

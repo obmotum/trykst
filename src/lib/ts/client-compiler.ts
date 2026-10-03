@@ -1,7 +1,7 @@
 import type { Diagnostic } from './typst-api';
-import type { WorkerDiagnostic, WorkerFile, WorkerRequest, WorkerResponse } from './compile-worker';
+import type { DocumentInsights, WorkerDiagnostic, WorkerFile, WorkerRequest, WorkerResponse } from './compile-worker';
 
-export type { WorkerFile };
+export type { DocumentInsights, WorkerFile };
 
 export interface CompileOutput {
 	ms: number;
@@ -19,6 +19,7 @@ export class ClientCompiler {
 	private worker: Worker;
 	private nextId = 1;
 	private pending = new Map<number, (output: CompileOutput) => void>();
+	private pendingInsights = new Map<number, (insights: DocumentInsights | undefined) => void>();
 	/** Resolves when the compiler has loaded; rejects when it cannot start. */
 	readonly ready: Promise<void>;
 
@@ -32,6 +33,9 @@ export class ClientCompiler {
 				else if (message.type === 'compiled') {
 					this.pending.get(message.id)?.(message);
 					this.pending.delete(message.id);
+				} else if (message.type === 'insights') {
+					this.pendingInsights.get(message.id)?.(message.insights);
+					this.pendingInsights.delete(message.id);
 				}
 			};
 			this.worker.onerror = (event) => reject(new Error(event.message || 'The compiler could not be started'));
@@ -57,10 +61,21 @@ export class ClientCompiler {
 		});
 	}
 
+	/** Page and word count of the last compiled document, and optionally its first page as SVG. */
+	insights(thumbnail: boolean): Promise<DocumentInsights | undefined> {
+		const id = this.nextId++;
+		return new Promise((resolve) => {
+			this.pendingInsights.set(id, resolve);
+			this.send({ type: 'insights', id, thumbnail });
+		});
+	}
+
 	dispose() {
 		this.worker.terminate();
 		for (const resolve of this.pending.values()) resolve({ ms: 0, diagnostics: [] });
+		for (const resolve of this.pendingInsights.values()) resolve(undefined);
 		this.pending.clear();
+		this.pendingInsights.clear();
 	}
 }
 

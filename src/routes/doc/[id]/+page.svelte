@@ -193,6 +193,7 @@
 			}
 			// A successful compilation may still carry warnings; the banner is for failures.
 			errors = output.action ? [] : toEditorDiagnostics(output.diagnostics, (path) => texts.get(path));
+			if (output.action) scheduleInsights();
 		} catch (e) {
 			errors = [{ message: `The preview could not be compiled: ${e instanceof Error ? e.message : e}`, severity: 'Error' }];
 		} finally {
@@ -201,6 +202,49 @@
 				compileAgain = false;
 				scheduleCompile();
 			}
+		}
+	}
+
+	// --- Word count and thumbnail, once typing pauses -----------------------------
+	const INSIGHTS_DELAY = 1500;
+	/** The thumbnail on the project page is renewed at most this often. */
+	const THUMBNAIL_EVERY = 30_000;
+	let insightsTimer: number | undefined;
+	let thumbnailTimer: number | undefined;
+	let lastThumbnail = '';
+	let lastThumbnailAt = 0;
+
+	function scheduleInsights() {
+		clearTimeout(insightsTimer);
+		insightsTimer = window.setTimeout(runInsights, INSIGHTS_DELAY);
+	}
+
+	async function runInsights() {
+		if (!compiler || !doc) return;
+		const editor = canWrite(doc.role);
+		const wait = THUMBNAIL_EVERY - (Date.now() - lastThumbnailAt);
+		const insights = await compiler.insights(editor && wait <= 0);
+		if (!insights) return;
+		$documentStatsStore = {
+			pages: insights.pages,
+			words: insights.words,
+			characters: insights.characters,
+			characters_excluding_spaces: insights.charactersExcludingSpaces
+		};
+		if (insights.thumbnail && insights.thumbnail !== lastThumbnail) {
+			lastThumbnail = insights.thumbnail;
+			lastThumbnailAt = Date.now();
+			fetch(`/api/documents/${docId}/thumbnail`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'image/svg+xml' },
+				body: insights.thumbnail
+			}).catch(() => {});
+		} else if (editor && wait > 0 && thumbnailTimer === undefined) {
+			// Too soon for another thumbnail: catch up once the interval is over.
+			thumbnailTimer = window.setTimeout(() => {
+				thumbnailTimer = undefined;
+				runInsights();
+			}, wait);
 		}
 	}
 
@@ -400,6 +444,8 @@
 			clearTimeout(errorTimer);
 			document.removeEventListener('visibilitychange', onVisible);
 			cleanupDocument();
+			clearTimeout(insightsTimer);
+			clearTimeout(thumbnailTimer);
 			compiler?.dispose();
 			$editorErrors = [];
 		};
