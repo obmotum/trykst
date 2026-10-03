@@ -62,6 +62,9 @@ async fn main() {
         .init();
 
     tracing::info!("Starting Trykst Server");
+    if !handlers::language_server_enabled() {
+        tracing::info!("Language server turned off (TRYKST_LANGUAGE_SERVER=false)");
+    }
 
     let db = db::init_db().await;
 
@@ -128,6 +131,7 @@ async fn main() {
         .route("/documents/{id}/upload", post(documents::upload_files))
         .route("/documents/{id}/entrypoint", put(documents::set_entrypoint))
         .route("/documents/{id}/fonts", get(documents::list_fonts))
+        .route("/documents/{id}/thumbnail", put(documents::set_thumbnail))
         .route("/documents/{id}/versions", get(documents::list_versions).post(documents::create_version))
         .route("/documents/{id}/versions/{version_id}", get(documents::get_version))
         .route("/documents/{id}/versions/{version_id}/restore", post(documents::restore_version))
@@ -142,7 +146,12 @@ async fn main() {
         .route("/packages", get(packages::list_instance_packages))
         .route("/packages/publish", post(packages::publish_package))
         .route("/packages/{id}", delete(packages::delete_package))
-        .route("/packages/{id}/versions", get(packages::list_versions));
+        .route("/packages/{id}/versions", get(packages::list_versions))
+        // What the compiler in the browser needs: packages and the built-in fonts
+        .route("/documents/{id}/packages/{namespace}/{name}/{version}", get(packages::package_files))
+        .route("/features", get(handlers::features))
+        .route("/fonts/default", get(handlers::default_fonts))
+        .route("/fonts/default/{index}", get(handlers::default_font));
 
 
     let v1_routes = Router::new()
@@ -159,7 +168,15 @@ async fn main() {
         .nest("/api", api_routes.layer(session_guard.clone()).layer(TraceLayer::new_for_http()))
         .nest("/v1", v1_routes.layer(TraceLayer::new_for_http()))
         .nest("/yjs", yjs_routes.layer(session_guard).layer(TraceLayer::new_for_http()))
-        .fallback_service(ServeDir::new(&static_dir).fallback(ServeFile::new(format!("{}/index.html", static_dir))))
+        // The frontend build may ship .br and .gz files next to the originals
+        // (the compiler is 30 MB of WebAssembly); they are served when accepted.
+        .fallback_service(
+            ServeDir::new(&static_dir)
+                .precompressed_br()
+                .precompressed_gzip()
+                .fallback(ServeFile::new(format!("{}/index.html", static_dir))),
+        )
+        .layer(axum::middleware::from_fn(handlers::cache_immutable_assets))
         .with_state(state);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());

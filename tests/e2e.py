@@ -12,6 +12,7 @@ Uses only the standard library so it runs on any CI runner.
 """
 
 import argparse
+import base64
 import html
 import http.cookiejar
 import json
@@ -86,8 +87,10 @@ class Session:
             sys.exit(f"Sign-in of {self.user} failed: HTTP {status} at {url}\n{page[:500]}")
         return json.loads(page)
 
-    def check(self, name, method, path, body=None, expect=(200, 201, 204), files=None, fields=None):
-        if files is not None:
+    def check(self, name, method, path, body=None, expect=(200, 201, 204), files=None, fields=None, raw=None):
+        if raw is not None:
+            data, headers = raw, {"Content-Type": "image/svg+xml"}
+        elif files is not None:
             data, headers = multipart(fields or {}, files)
         elif body is not None:
             data, headers = json.dumps(body).encode(), {"Content-Type": "application/json"}
@@ -205,6 +208,8 @@ alice.check("image cannot be the entrypoint", "PUT", f"/api/documents/{did}/entr
 pdf = alice.check("export PDF", "POST", "/api/export/pdf", {"document_id": did})
 expect(isinstance(pdf, bytes) and pdf.startswith(b"%PDF"), "export returns a PDF")
 alice.check("list fonts", "GET", f"/api/documents/{did}/fonts")
+alice.check("browser sets the thumbnail", "PUT", f"/api/documents/{did}/thumbnail", raw=b'<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+alice.check("thumbnail must be an SVG", "PUT", f"/api/documents/{did}/thumbnail", raw=b"<script>x</script>", expect=(400,))
 
 # --- Versions and comments ------------------------------------------------------------
 version = alice.check("create version", "POST", f"/api/documents/{did}/versions", {"label": "v1"}) or {}
@@ -242,9 +247,24 @@ ok, _ = compiles(alice, did, "compile with @project import")
 expect(ok, "@project package import compiles")
 if alice.me["is_admin"]:
     # Instance packages persist across projects; a unique version keeps reruns working.
+    override = f"0.0.{int(time.time())}"
     alice.check("publish instance package", "POST", "/api/packages/publish",
-                {"document_id": pkg_did, "scope": "instance", "version": f"0.0.{int(time.time())}"})
+                {"document_id": pkg_did, "scope": "instance", "version": override})
+    # Typst rejects a package whose manifest names another version than the import.
+    shipped = alice.check("instance package for the browser", "GET",
+                          f"/api/documents/{did}/packages/trykst/gruss/{override}") or []
+    manifest = next((base64.b64decode(f["data"]).decode() for f in shipped if f["path"] == "typst.toml"), "")
+    expect(f'version = "{override}"' in manifest, "manifest carries the published version")
 alice.check("list instance packages", "GET", "/api/packages")
+# The compiler in the browser fetches package files and the built-in fonts.
+bundle = alice.check("package files for the browser", "GET", f"/api/documents/{did}/packages/project/gruss/0.1.0") or []
+expect({"typst.toml", "lib.typ"} <= {f["path"] for f in bundle}, "package bundle has manifest and entrypoint")
+alice.check("unknown package version", "GET", f"/api/documents/{did}/packages/project/gruss/9.9.9", expect=(404,))
+bob.check("package files need document access", "GET", f"/api/documents/{did}/packages/project/gruss/0.1.0", expect=(404,))
+features = alice.check("instance features", "GET", "/api/features") or {}
+expect(isinstance(features.get("language_server"), bool), "features say whether the language server is on")
+fonts = alice.check("built-in fonts", "GET", "/api/fonts/default") or []
+expect(len(fonts) > 0, "server lists its built-in fonts")
 
 # --- Permissions --------------------------------------------------------------------------
 bob.check("non-member cannot see project", "GET", f"/api/projects/{pid}", expect=(404,))
@@ -268,6 +288,7 @@ expect(len(members) == 3, "project has three members")
 projects = bob.check("viewer lists projects", "GET", "/api/projects") or []
 expect(any(p["id"] == pid for p in projects), "project appears for the new member")
 bob.check("viewer reads document", "GET", f"/api/documents/{did}/tree")
+bob.check("viewer cannot set the thumbnail", "PUT", f"/api/documents/{did}/thumbnail", raw=b"<svg></svg>", expect=(403,))
 bob.check("viewer cannot write", "PATCH", f"/api/documents/{did}/nodes/{main.get('id')}",
           {"content": "x"}, expect=(403,))
 bob.check("viewer cannot create documents", "POST", f"/api/projects/{pid}/documents",

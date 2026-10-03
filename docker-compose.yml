@@ -64,6 +64,9 @@ services:
       # - OIDC_DIRECTORY_ORG_ATTRIBUTE=organization
       # Maximum session length before a (silent) re-login at the IdP (default: 10)
       # - SESSION_MAX_AGE_HOURS=10
+      # Completion and hover help in the editor run on the server (tinymist, one
+      # process per open file). Turn them off to save that load:
+      # - TRYKST_LANGUAGE_SERVER=false
       # Log verbosity (default: server=debug,tower_http=debug)
       # - RUST_LOG=info
     volumes:

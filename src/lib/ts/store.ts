@@ -13,8 +13,6 @@ export const editorErrors = writable<Diagnostic[]>([]);
 export const documentStatsStore = writable<{pages: number; words: number; characters: number; characters_excluding_spaces: number} | null>(null);
 export const triggerLspReconnect = writable(0);
 export const previewOpenStore = writable(true);
-/** The pages of the open document as SVG, for the presentation mode. */
-export const previewSvgsStore = writable<string[]>([]);
 
 export interface AwarenessUser {
     clientId: number;

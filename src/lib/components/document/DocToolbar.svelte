@@ -14,7 +14,7 @@
 	import { userStore } from '../../ts/auth';
 	import { api, canWrite } from '../../ts/api';
 	import type { Doc, TreeNode } from '../../ts/api';
-	import { exportDocument, renderDocument, downloadBlob } from '../../ts/typst-api';
+	import { compileDocument, exportDocument, renderDocument, downloadBlob } from '../../ts/typst-api';
 	import ThemePicker from '../ThemePicker.svelte';
 	import PageSettingsModal from '../PageSettingsModal.svelte';
 	import PresentationMode from '../PresentationMode.svelte';
@@ -92,6 +92,11 @@
 			return;
 		}
 		exportDocument(doc.id, getFiles(), format, safeName()).catch((e) => fail(`Failed to export as ${format.toUpperCase()}`, e));
+	}
+
+	async function loadSlides(): Promise<string[]> {
+		const result = await compileDocument(doc.id, getFiles());
+		return (result.pages ?? []).map((page) => page.svg ?? '');
 	}
 
 	function handlePrint() {
@@ -479,7 +484,7 @@
 {/if}
 
 {#if isPresentationOpen}
-	<PresentationMode onClose={() => (isPresentationOpen = false)} />
+	<PresentationMode loadPages={loadSlides} onClose={() => (isPresentationOpen = false)} />
 {/if}
 
 {#if isShareOpen}

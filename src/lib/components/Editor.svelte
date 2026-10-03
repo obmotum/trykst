@@ -174,6 +174,16 @@
 		return true;
 	}
 
+	/** Whether this instance offers the language server; asked once per page load. */
+	let languageServerCheck: Promise<boolean> | undefined;
+	let destroyed = false;
+	function languageServerAvailable(): Promise<boolean> {
+		return (languageServerCheck ??= fetch('/api/features')
+			.then((res) => (res.ok ? res.json() : { language_server: false }))
+			.then((features) => features.language_server === true)
+			.catch(() => false));
+	}
+
 	function typstCompletions(context: CompletionContext) {
 		let word = context.matchBefore(/[\w#]*/);
 		if (!word || (word.from == word.to && !context.explicit)) return null;
@@ -190,7 +200,7 @@
 		};
 	}
 
-	onMount(() => {
+	onMount(async () => {
 		const activeText = ytext;
 		const activeProvider = awarenessProvider;
 		if (!activeText || !activeProvider) return;
@@ -344,7 +354,8 @@
 			lsSocket.onopen = () => {};
 		}
 		
-		if (enableLsp && docId) {
+		// The editor may be gone by the time the answer arrives.
+		if (enableLsp && docId && (await languageServerAvailable()) && !destroyed) {
 			connectLsp();
 
 			unsubscribeLspReconnect = triggerLspReconnect.subscribe((val) => {
@@ -356,6 +367,7 @@
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		if (lsSocket) lsSocket.close();
 		if (unsubscribeTheme) unsubscribeTheme();
 		if (unsubscribeDark) unsubscribeDark();

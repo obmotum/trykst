@@ -17,6 +17,10 @@ export default defineConfig({
 	optimizeDeps: {
 		exclude: ['codemirror-lang-typst']
 	},
+	// The Typst compiler for the preview runs in a module worker.
+	worker: {
+		format: 'es'
+	},
 	build: {
 		target: 'esnext'
 	}

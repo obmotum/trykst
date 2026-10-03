@@ -981,3 +981,29 @@ pub async fn list_fonts(
     }
     Ok(Json(families.into_iter().collect()))
 }
+
+/// Largest thumbnail accepted, in bytes.
+const MAX_THUMBNAIL: usize = 1024 * 1024;
+
+/// The thumbnail on the project page: an SVG of the first page, rendered by
+/// the browser that compiles the document (the server no longer does).
+pub async fn set_thumbnail(
+    State(state): State<AppState>,
+    Path(doc_id): Path<String>,
+    jar: SignedCookieJar,
+    svg: String,
+) -> Result<StatusCode, ApiError> {
+    let user = session_user(&jar);
+    require_document(&state, &doc_id, user.as_deref(), Role::Editor).await?;
+    // Shown through <img>, where SVG cannot run scripts; still keep it an SVG of sane size.
+    if !svg.trim_start().starts_with("<svg") || svg.len() > MAX_THUMBNAIL {
+        return Err((StatusCode::BAD_REQUEST, "The thumbnail must be an SVG of at most 1 MB".to_string()));
+    }
+    sqlx::query("UPDATE documents SET thumbnail_svg = $1 WHERE id = $2")
+        .bind(&svg)
+        .bind(&doc_id)
+        .execute(&state.db)
+        .await
+        .map_err(db_err)?;
+    Ok(StatusCode::NO_CONTENT)
+}

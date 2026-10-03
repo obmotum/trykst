@@ -444,12 +444,32 @@ pub async fn pandoc_import_handler(
 
 
 /// Language server for a document: tinymist runs on a copy of all its files.
+/// Whether the editor gets a language server (tinymist, one process per open
+/// file on this server). On by default; `TRYKST_LANGUAGE_SERVER=false` turns it off.
+pub fn language_server_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        !matches!(
+            std::env::var("TRYKST_LANGUAGE_SERVER").map(|v| v.to_ascii_lowercase()).as_deref(),
+            Ok("false" | "0" | "off" | "no")
+        )
+    })
+}
+
+/// What the frontend should offer on this instance.
+pub async fn features() -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "language_server": language_server_enabled() }))
+}
+
 pub async fn lsp_handler(
     ws: axum::extract::ws::WebSocketUpgrade,
     Path(id): Path<String>,
     State(state): State<AppState>,
     jar: SignedCookieJar,
 ) -> Result<Response, ApiError> {
+    if !language_server_enabled() {
+        return Err((StatusCode::NOT_FOUND, "The language server is turned off on this instance".to_string()));
+    }
     let user = session_user(&jar);
     let access = require_document(&state, &id, user.as_deref(), Role::Viewer).await?;
     let (_, files_map) = document_files(&state, &access.doc, &HashMap::new()).await?;
@@ -565,4 +585,39 @@ pub async fn lsp_handler(
             _ = child.wait() => {}
         }
     }))
+}
+
+// --- Assets for the compiler in the browser -----------------------------------------
+
+/// URLs of the fonts built into the compiler, so the preview in the browser
+/// uses exactly the fonts the server exports with.
+pub async fn default_fonts() -> Json<Vec<String>> {
+    let version = env!("CARGO_PKG_VERSION");
+    Json((0..typst_assets::fonts().count()).map(|i| format!("/api/fonts/default/{i}?v={version}")).collect())
+}
+
+pub async fn default_font(Path(index): Path<usize>) -> Result<Response, ApiError> {
+    let data = typst_assets::fonts().nth(index).ok_or((StatusCode::NOT_FOUND, "Font not found".to_string()))?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "font/otf"),
+            // The URL carries the server version, so the response never changes.
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        data,
+    )
+        .into_response())
+}
+
+/// Files under `/_app/immutable/` have content hashes in their names.
+pub async fn cache_immutable_assets(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let immutable = request.uri().path().starts_with("/_app/immutable/");
+    let mut response = next.run(request).await;
+    if immutable && response.status().is_success() {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    }
+    response
 }

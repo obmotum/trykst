@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { page } from '$app/stores';
 	import Icon from '@iconify/svelte';
 	import { userStore, redirectToLogin } from '$lib/ts/auth';
 	import Editor from '$lib/components/Editor.svelte';
-	import Preview from '$lib/components/Preview.svelte';
+	import ClientPreview from '$lib/components/ClientPreview.svelte';
 	import ErrorBanner from '$lib/components/ErrorBanner.svelte';
 	import DocFooter from '$lib/components/DocFooter.svelte';
 	import FileTree from '$lib/components/document/FileTree.svelte';
@@ -13,9 +13,10 @@
 	import PublishPackageModal from '$lib/components/PublishPackageModal.svelte';
 	import { api, canWrite } from '$lib/ts/api';
 	import type { Doc, Tree, TreeNode } from '$lib/ts/api';
-	import { compileDocument } from '$lib/ts/typst-api';
-	import type { Diagnostic, PreviewPage } from '$lib/ts/typst-api';
-	import { editorErrors, documentStatsStore, previewOpenStore, previewSvgsStore, editorViewStore, commentsSidebarOpen, commentReference, versionHistoryOpen } from '$lib/ts/store';
+	import type { Diagnostic } from '$lib/ts/typst-api';
+	import { ClientCompiler, toEditorDiagnostics } from '$lib/ts/client-compiler';
+	import type { WorkerFile } from '$lib/ts/client-compiler';
+	import { editorErrors, documentStatsStore, previewOpenStore, editorViewStore, commentsSidebarOpen, commentReference, versionHistoryOpen } from '$lib/ts/store';
 	import { setDocument, openFile, closeFile, closeAllFiles, setActiveFile, openTexts, cleanupDocument } from '$lib/ts/yjs-document';
 	import type { OpenFile } from '$lib/ts/yjs-document';
 
@@ -27,7 +28,6 @@
 	let nodes = $state<TreeNode[]>([]);
 	let activeId = $state('');
 	let activeEntry = $state.raw<OpenFile | undefined>(undefined);
-	let pages = $state.raw<Required<PreviewPage>[]>([]);
 	let errors = $state<Diagnostic[]>([]);
 	let showPublish = $state(false);
 	let loadError = $state('');
@@ -70,9 +70,92 @@
 		return files;
 	}
 
+	// The preview is compiled here in the browser, by a compiler in a Web Worker.
+	// The server only stores the files; it compiles for exports, not for the preview.
+	let compiler: ClientCompiler | undefined;
+	/** Font files the running compiler was started with; fonts cannot be added later. */
+	let compilerFonts = '';
+	let preview = $state<ClientPreview | undefined>();
+	let previewReady = false;
+	/** True while the preview has received everything the compiler produced. */
+	let previewInSync = false;
+	/** What the compiler holds, by node id: the path and the version it was loaded in. */
+	const loaded = new Map<string, { path: string; stamp: string }>();
+	/** Text of the text files by absolute path, to turn line:column into editor positions. */
+	const texts = new Map<string, string>();
+	/** Last text sent from the editor, by node id. */
+	const pushed = new Map<string, string>();
+
+	const isFont = (node: TreeNode) => /\.(ttf|otf)$/i.test(node.name);
+
+	async function fetchFile(node: TreeNode): Promise<WorkerFile> {
+		const res = await fetch(contentUrl(node));
+		if (!res.ok) throw new Error(`Could not load ${node.path}`);
+		const path = '/' + node.path;
+		return node.kind === 'text' ? { path, text: await res.text() } : { path, bytes: new Uint8Array(await res.arrayBuffer()) };
+	}
+
+	/** Brings the compiler's files in line with the tree: loads new and changed files, drops removed ones. */
+	async function syncFiles() {
+		const files = nodes.filter((n) => n.kind !== 'folder');
+		const fontKey = files.filter(isFont).map((n) => `${n.id}:${n.updated_at}`).join(',');
+		if (!compiler || fontKey !== compilerFonts) {
+			compiler?.dispose();
+			loaded.clear();
+			texts.clear();
+			pushed.clear();
+			const fonts = await Promise.all(files.filter(isFont).map(async (n) => (await fetchFile(n)).bytes!));
+			compiler = new ClientCompiler(docId, fonts);
+			compilerFonts = fontKey;
+			previewInSync = false;
+		}
+
+		const wanted = new Map(files.map((n) => [n.id, n]));
+		const remove: string[] = [];
+		for (const [id, entry] of loaded) {
+			const node = wanted.get(id);
+			if (!node || '/' + node.path !== entry.path) {
+				remove.push(entry.path);
+				texts.delete(entry.path);
+				loaded.delete(id);
+				pushed.delete(id);
+			}
+		}
+		// Files open in the editor are kept current from there, not from the server.
+		const open = openTexts();
+		const stale = files.filter((n) => {
+			const have = loaded.get(n.id);
+			return !have || (have.stamp !== n.updated_at && !open.has(n.id));
+		});
+		const set = await Promise.all(stale.map(fetchFile));
+		stale.forEach((node, i) => {
+			loaded.set(node.id, { path: set[i].path, stamp: node.updated_at });
+			if (set[i].text !== undefined) texts.set(set[i].path, set[i].text!);
+		});
+		compiler.update(set, remove);
+	}
+
+	let syncing: Promise<void> = Promise.resolve();
+	function queueSync() {
+		syncing = syncing.then(syncFiles).catch(showTreeError);
+	}
+
+	/** Sends what the editor shows for the open files, if it changed. */
+	function pushOpenTexts() {
+		const set: WorkerFile[] = [];
+		for (const [id, text] of openTexts()) {
+			const entry = loaded.get(id);
+			if (!entry || pushed.get(id) === text) continue;
+			pushed.set(id, text);
+			texts.set(entry.path, text);
+			set.push({ path: entry.path, text });
+		}
+		compiler?.update(set);
+	}
+
 	function scheduleCompile() {
 		clearTimeout(compileTimer);
-		compileTimer = window.setTimeout(triggerCompile, 500);
+		compileTimer = window.setTimeout(triggerCompile, 60);
 	}
 
 	// Never two compilations at once: changes made while one is running are
@@ -81,29 +164,38 @@
 	let compileAgain = false;
 
 	async function triggerCompile() {
-		if (!doc || (!$previewOpenStore && !readOnly)) return;
+		if (!doc) return;
 		if (compiling) {
 			compileAgain = true;
 			return;
 		}
 		compiling = true;
 		try {
-			// The server sends only the pages that are not on screen already.
-			const have = new Map(pages.map((p) => [p.hash, p.svg]));
-			let res = await compileDocument(docId, getFiles(), [...have.keys()]);
-			if (res.pages?.some((p) => p.svg === undefined && !have.has(p.hash))) {
-				res = await compileDocument(docId, getFiles());
+			await syncing;
+			if (!compiler) return;
+			await compiler.ready;
+			pushOpenTexts();
+			const main = nodes.find((n) => n.id === doc!.entrypoint_id);
+			if (!main) {
+				errors = [{ message: 'The document has no main file; mark a .typ file as main file.', severity: 'Error' }];
+				return;
 			}
-			if (res.stats) $documentStatsStore = res.stats;
-			if (res.pages) {
-				pages = res.pages.map((p) => ({ hash: p.hash, svg: p.svg ?? have.get(p.hash) ?? '' }));
-				$previewSvgsStore = pages.map((p) => p.svg);
-				errors = [];
-			} else if (res.errors) {
-				errors = res.errors;
+			// A preview that missed changes (closed, or just opened) needs the whole document again.
+			const target = previewReady ? preview : undefined;
+			const output = await compiler.compile('/' + main.path, !!target && !previewInSync);
+			if (output.action && output.data) {
+				if (target && (previewInSync || output.action === 'reset')) {
+					await target.apply(output.action, output.data);
+					previewInSync = true;
+				} else {
+					previewInSync = false;
+				}
 			}
-		} catch {
-			errors = [{ message: 'Network or server error while compiling the document.', severity: 'Error' }];
+			// A successful compilation may still carry warnings; the banner is for failures.
+			errors = output.action ? [] : toEditorDiagnostics(output.diagnostics, (path) => texts.get(path));
+			if (output.action) scheduleInsights();
+		} catch (e) {
+			errors = [{ message: `The preview could not be compiled: ${e instanceof Error ? e.message : e}`, severity: 'Error' }];
 		} finally {
 			compiling = false;
 			if (compileAgain) {
@@ -113,9 +205,58 @@
 		}
 	}
 
-	// Reopening the preview shows the current state right away.
+	// --- Word count and thumbnail, once typing pauses -----------------------------
+	const INSIGHTS_DELAY = 1500;
+	/** The thumbnail on the project page is renewed at most this often. */
+	const THUMBNAIL_EVERY = 30_000;
+	let insightsTimer: number | undefined;
+	let thumbnailTimer: number | undefined;
+	let lastThumbnail = '';
+	let lastThumbnailAt = 0;
+
+	function scheduleInsights() {
+		clearTimeout(insightsTimer);
+		insightsTimer = window.setTimeout(runInsights, INSIGHTS_DELAY);
+	}
+
+	async function runInsights() {
+		if (!compiler || !doc) return;
+		const editor = canWrite(doc.role);
+		const wait = THUMBNAIL_EVERY - (Date.now() - lastThumbnailAt);
+		const insights = await compiler.insights(editor && wait <= 0);
+		if (!insights) return;
+		$documentStatsStore = {
+			pages: insights.pages,
+			words: insights.words,
+			characters: insights.characters,
+			characters_excluding_spaces: insights.charactersExcludingSpaces
+		};
+		if (insights.thumbnail && insights.thumbnail !== lastThumbnail) {
+			lastThumbnail = insights.thumbnail;
+			lastThumbnailAt = Date.now();
+			fetch(`/api/documents/${docId}/thumbnail`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'image/svg+xml' },
+				body: insights.thumbnail
+			}).catch(() => {});
+		} else if (editor && wait > 0 && thumbnailTimer === undefined) {
+			// Too soon for another thumbnail: catch up once the interval is over.
+			thumbnailTimer = window.setTimeout(() => {
+				thumbnailTimer = undefined;
+				runInsights();
+			}, wait);
+		}
+	}
+
+	function previewIsReady() {
+		previewReady = true;
+		previewInSync = false;
+		triggerCompile();
+	}
+
+	// A closed preview takes nothing; when it comes back it starts empty.
 	$effect(() => {
-		if ($previewOpenStore) untrack(triggerCompile);
+		if (!preview) previewReady = false;
 	});
 
 	// --- Files -----------------------------------------------------------------------
@@ -153,6 +294,7 @@
 		}
 		nodes = tree.nodes;
 		if (doc) doc.entrypoint_id = tree.entrypoint_id;
+		queueSync();
 		if (!ids.has(activeId)) {
 			activate(tree.nodes.find((n) => n.id === tree.entrypoint_id) ?? tree.nodes.find((n) => n.kind === 'text'));
 		}
@@ -276,6 +418,7 @@
 
 	onMount(() => {
 		setDocument(docId);
+		$documentStatsStore = null;
 		$commentsSidebarOpen = false;
 		$versionHistoryOpen = false;
 
@@ -301,8 +444,10 @@
 			clearTimeout(errorTimer);
 			document.removeEventListener('visibilitychange', onVisible);
 			cleanupDocument();
+			clearTimeout(insightsTimer);
+			clearTimeout(thumbnailTimer);
+			compiler?.dispose();
 			$editorErrors = [];
-			$previewSvgsStore = [];
 		};
 	});
 </script>
@@ -378,7 +523,7 @@
 
 			{#if $previewOpenStore || readOnly}
 				<div class="{readOnly ? 'flex-1' : 'w-full md:w-1/2'} min-w-0 relative [contain:strict] bg-[var(--theme-panel)] flex flex-col">
-					<Preview {pages} />
+					<ClientPreview bind:this={preview} onReady={previewIsReady} onLost={previewIsReady} />
 					<ErrorBanner {errors} />
 				</div>
 			{/if}
