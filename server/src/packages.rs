@@ -14,11 +14,14 @@ use axum::{
     Json,
 };
 use axum_extra::extract::cookie::SignedCookieJar;
-use serde::Deserialize;
+use base64::Engine;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    access::{db_err, forbidden, not_found, require_document, require_project_role, require_user, ApiError, Role},
+    access::{
+        db_err, forbidden, not_found, require_document, require_project_role, require_user, session_user, ApiError, Role,
+    },
     models::{Package, PackageVersion, PublishPackageRequest},
     AppState,
 };
@@ -50,6 +53,19 @@ fn is_valid_name(name: &str) -> bool {
 fn is_valid_version(version: &str) -> bool {
     let parts: Vec<&str> = version.split('.').collect();
     parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// The manifest with `package.version` set to `version`. Typst refuses a
+/// package whose manifest names another version than the one imported, which
+/// happens when a package is published under an overridden version.
+fn manifest_for_version(manifest: &str, version: &str) -> Option<String> {
+    let mut table: toml::Table = toml::from_str(manifest).ok()?;
+    let package = table.get_mut("package")?.as_table_mut()?;
+    if package.get("version").and_then(|v| v.as_str()) == Some(version) {
+        return None;
+    }
+    package.insert("version".to_string(), toml::Value::String(version.to_string()));
+    toml::to_string(&table).ok()
 }
 
 pub async fn is_admin(state: &AppState, user_id: &str) -> Result<bool, ApiError> {
@@ -106,7 +122,7 @@ pub async fn publish_package(
         return Err(forbidden("Only admins can publish instance-wide packages"));
     }
 
-    let (_, files) = crate::documents::document_files(&state, &access.doc, &HashMap::new()).await?;
+    let (_, mut files) = crate::documents::document_files(&state, &access.doc, &HashMap::new()).await?;
     let manifest_text = files
         .get("typst.toml")
         .map(|b| String::from_utf8_lossy(b).into_owned())
@@ -123,6 +139,14 @@ pub async fn publish_package(
     if !is_valid_version(&version) {
         return Err((StatusCode::BAD_REQUEST, "Version must be in the form major.minor.patch".to_string()));
     }
+    // Published under another version than the manifest says: store it consistently.
+    let manifest_text = match manifest_for_version(&manifest_text, &version) {
+        Some(adjusted) => {
+            files.insert("typst.toml".to_string(), adjusted.clone().into_bytes());
+            adjusted
+        }
+        None => manifest_text,
+    };
     if !files.contains_key(&entrypoint) {
         return Err((StatusCode::BAD_REQUEST, format!("The package entrypoint {entrypoint} does not exist")));
     }
@@ -283,4 +307,56 @@ pub async fn delete_package(
         .await
         .map_err(db_err)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Serialize)]
+pub struct PackageFile {
+    path: String,
+    /// Base64, as packages hold binary files too.
+    data: String,
+}
+
+/// The files of one package version, for the compiler in the browser.
+/// Whoever can open the document gets the packages it can import:
+/// `@project/...` of its project and the instance-wide `@trykst/...`.
+pub async fn package_files(
+    State(state): State<AppState>,
+    Path((doc_id, namespace, name, version)): Path<(String, String, String, String)>,
+    jar: SignedCookieJar,
+) -> Result<Json<Vec<PackageFile>>, ApiError> {
+    let user = session_user(&jar);
+    let access = require_document(&state, &doc_id, user.as_deref(), Role::Viewer).await?;
+    let project_id = match namespace.as_str() {
+        PROJECT_NAMESPACE => Some(access.doc.project_id.clone()),
+        INSTANCE_NAMESPACE | "typstdrive" => None,
+        _ => return Err(not_found("Package")),
+    };
+
+    let rows: Vec<(String, Vec<u8>)> = sqlx::query_as(
+        "SELECT f.path, f.data FROM package_files f          JOIN package_versions v ON v.id = f.version_id          JOIN packages p ON p.id = v.package_id          WHERE p.name = $1 AND v.version = $2 AND COALESCE(p.project_id, '') = COALESCE($3, '')",
+    )
+    .bind(&name)
+    .bind(&version)
+    .bind(&project_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(db_err)?;
+    if rows.is_empty() {
+        return Err(not_found("Package"));
+    }
+
+    let b64 = base64::engine::general_purpose::STANDARD;
+    Ok(Json(
+        rows.into_iter()
+            .map(|(path, data)| {
+                // Packages published before manifests were adjusted (see `manifest_for_version`).
+                let data = if path == "typst.toml" {
+                    manifest_for_version(&String::from_utf8_lossy(&data), &version).map(String::into_bytes).unwrap_or(data)
+                } else {
+                    data
+                };
+                PackageFile { path, data: b64.encode(data) }
+            })
+            .collect(),
+    ))
 }

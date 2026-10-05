@@ -7,6 +7,11 @@ COPY package.json ./
 RUN bun install
 COPY . .
 RUN bun run build
+# Ship compressed copies next to the assets; the server hands them out when the
+# browser accepts them. The Typst compiler for the preview alone is 30 MB.
+RUN apk add --no-cache brotli \
+    && find build -type f \( -name '*.wasm' -o -name '*.js' -o -name '*.css' -o -name '*.html' \) -size +2k \
+       -exec sh -c 'gzip -9 -k "$1" && brotli -q 11 -k "$1"' _ {} \;
 
 # Build Backend
 # Built for the target platform (under QEMU emulation for non-native arches).

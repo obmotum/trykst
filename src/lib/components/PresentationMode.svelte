@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { get } from 'svelte/store';
-	import { previewSvgsStore } from '../ts/store';
 	import Icon from '@iconify/svelte';
 
-	let { onClose } = $props<{ onClose: () => void }>();
+	// The slides are the pages as the server renders them, like an export.
+	let { onClose, loadPages }: { onClose: () => void; loadPages: () => Promise<string[]> } = $props();
 
 	let svgs = $state<string[]>([]);
 	let currentSlide = $state(0);
@@ -41,7 +40,7 @@
 	}
 
 	onMount(() => {
-		svgs = get(previewSvgsStore);
+		loadPages().then((pages) => (svgs = pages)).catch((e) => console.error('Failed to load the slides', e));
 
 		const el = document.getElementById('presentation-container');
 		if (el && el.requestFullscreen) {

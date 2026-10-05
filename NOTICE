@@ -18,8 +18,12 @@ Changes relative to TypstDrive include, among others:
   file trees; spaces, account-wide files and per-document invitations removed
 - Removed: password login, registration, setup wizard, desktop sync API
 - Renamed to Trykst; package namespaces @project and @trykst (@typstdrive still accepted)
+- Live preview compiled in the browser with typst.ts instead of on the server
 
 The individual changes are recorded in the version control history.
 
 This product includes the Typst compiler (https://github.com/typst/typst),
+licensed under the Apache License, Version 2.0.
+
+The frontend includes typst.ts (https://github.com/Myriad-Dreamin/typst.ts),
 licensed under the Apache License, Version 2.0.

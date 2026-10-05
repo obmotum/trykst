@@ -38,7 +38,7 @@ Trykst is a fork of [TypstDrive](https://github.com/SirBlobby/TypstDrive) by Sir
 
 ### Editing
 - **Real-time collaboration**: Yjs and CodeMirror 6 with live cursors, per file.
-- **Instant preview**: Typst compiled to SVG on the fly, with zoom and a collapsible preview pane. Errors name the file they occur in.
+- **Live preview compiled in the browser**: Typst runs as WebAssembly ([typst.ts](https://github.com/Myriad-Dreamin/typst.ts)) in a background thread and updates the preview on every keystroke, drawing only the visible pages. The server stores and synchronizes; it compiles only for exports, printing and the API, so many people editing at once do not load it. Errors name the file they occur in.
 - **Packages**: publish a document with a `typst.toml` as a versioned Typst package. Project packages are importable by the documents of the same project as `@project/<name>:<version>`; admins can publish instance-wide packages as `@trykst/<name>:<version>`.
 - **Comments** on documents and files, and a **version history** that snapshots the whole document with all its files.
 - **Export** to PDF, PNG, SVG, HTML, Markdown, Word or LaTeX (Pandoc).
@@ -78,6 +78,12 @@ docker compose up -d --build
 
 Edit `docker-compose.yml` first: it documents every variable. Data lives in SQLite by default (`/data/trykst.db` in the `appdata` volume); PostgreSQL is supported via `DATABASE_URL` and `DB_TYPE=postgres`.
 
+### What the browser loads
+
+The preview is compiled in the browser. On the first visit it downloads the Typst compiler (7.6 MB with Brotli, 10.9 MB with gzip, 30 MB uncompressed) and the built-in fonts (about 10 MB); both are cached afterwards. The image ships compressed copies of its assets and Trykst serves them by itself, so a reverse proxy does not need to compress; it must not strip the `Content-Encoding` header.
+
+Fonts and `@project`/`@trykst` packages come from Trykst itself. `@preview` packages from [Typst Universe](https://typst.app/universe/) are fetched by the browser from `packages.typst.org`, so browsers need access to it for documents that use them.
+
 ### Required configuration
 
 | Variable | Example | Description |
@@ -110,6 +116,7 @@ Register these URLs at the IdP:
 | `OIDC_DIRECTORY_ORG_SOURCE` | `attribute` | `attribute` or `organizations` (Keycloak Organizations). |
 | `OIDC_DIRECTORY_ORG_ATTRIBUTE` | `organization` | User attribute shown as organization when the source is `attribute`. |
 | `SESSION_MAX_AGE_HOURS` | `10` | Maximum session length before a (silent) re-login at the IdP. |
+| `TRYKST_LANGUAGE_SERVER` | `true` | Completion and hover help in the editor via `tinymist`, which runs on the server as one process per open file. Set to `false` to save that load. |
 | `DATABASE_URL` | `sqlite:///data/trykst.db?mode=rwc` | SQLite or `postgres://user:pass@host:5432/trykst`. |
 | `DB_TYPE` | auto | `sqlite` or `postgres`. |
 | `PORT` | `3000` | HTTP port. |
